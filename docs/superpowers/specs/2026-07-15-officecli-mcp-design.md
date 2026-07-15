@@ -97,22 +97,25 @@ OpenWebUI (pod A)                              officecli-mcp (pod B)
 - Captures a nonzero exit as an error result with stderr in the tool response (never raises into the MCP layer).
 
 ### `tools.py` — MCP tools (handle-based)
-Each tool takes `file_id` (and the verb-specific params), resolves via the runner, and returns MCP content blocks. Tools set `ToolAnnotations` (readOnlyHint/destructiveHint/openWorldHint=false). Initial set:
+Each tool takes `file_id` (and the verb-specific params), resolves via the runner, and returns MCP content blocks. **All tools are prefixed `officecli_`** to avoid name collisions with other MCP servers a client may have connected (the native upload shim is `officecli_upload`, same prefix). Tools set `ToolAnnotations` (readOnlyHint/destructiveHint/openWorldHint=false). Initial set:
 
 | Tool | Maps to | Returns |
 |---|---|---|
-| `create` | `create <file_id>/<name>.<ext> --type ...` | new file_id (text) |
-| `view_text` | `view <path> text [--page]` | text |
-| `view_html` | `view <path> html` | HTML (text) |
-| `view_screenshot` | `view <path> screenshot [--page]` | base64 PNG (image) |
-| `view_annotated`/`outline`/`stats`/`issues` | `view <path> <mode> [--json]` | text/json |
-| `get` | `get <path> <selector> [--depth --json]` | text/json |
-| `set` | `set <path> <selector> --prop ...` | text |
-| `add`/`remove`/`move`/`swap` | same verbs | text |
-| `edit` | `set <path> /find-replace` (find/replace text) | text |
-| `validate` | `validate <path> [--json]` | text/json |
-| `batch` | `batch <path> --commands <json>` | text/json |
-| `get_result_file` | (read an output file the runner produced, e.g. an exported PDF) | bytes or base64 |
+| `officecli_create` | `create <file_id>/<name>.<ext> --type ...` | new file_id (text) |
+| `officecli_view_text` | `view <path> text [--page]` | text |
+| `officecli_view_html` | `view <path> html` | HTML (text) |
+| `officecli_view_screenshot` | `view <path> screenshot [--page]` | base64 PNG (image) |
+| `officecli_view_annotated` | `view <path> annotated [--json]` | text/json |
+| `officecli_view_outline` | `view <path> outline` | text |
+| `officecli_view_stats` | `view <path> stats` | text/json |
+| `officecli_view_issues` | `view <path> issues [--json]` | text/json |
+| `officecli_get` | `get <path> <selector> [--depth --json]` | text/json |
+| `officecli_set` | `set <path> <selector> --prop ...` | text |
+| `officecli_add` / `officecli_remove` / `officecli_move` / `officecli_swap` | same verbs | text |
+| `officecli_edit` | `set <path> /find-replace` (find/replace text) | text |
+| `officecli_validate` | `validate <path> [--json]` | text/json |
+| `officecli_batch` | `batch <path> --commands <json>` | text/json |
+| `officecli_get_result_file` | (read an output file the runner produced, e.g. an exported PDF) | bytes or base64 |
 
 `file_id`-as-handle is the whole point: the LLM passes a short opaque id, never a path or bytes.
 
@@ -196,8 +199,8 @@ All five driven by an automated integration test, not just manual curls.
 - **Base64 inline as the LLM's tool param.** Rejected as primary: the LLM has no bytes to fill it, and multi-MB base64 in context is token-prohibitive. Kept only as an *optional* `/files` upload format for tiny files / restricted nets.
 - **Code-interpreter (Pyodide) pushing bytes.** Rejected: Python-only, no native libs (can't even read .docx), CORS-blocked to sibling containers, model must hand-write fragile upload code.
 
-## Open questions for review
+## Decisions (locked 2026-07-15)
 
-1. Is the initial tool set right, or should we expose a single generic `officecli(command, file_id)` passthrough tool (closer to upstream's single-tool model) instead of many typed tools? Trade-off: typed tools are safer/clearer for the LLM; passthrough is less code and always covers every verb. **Recommendation: typed tools for v1; add a raw passthrough later if gaps appear.**
-2. Default `WORK_TTL_SECONDS` = 3600 acceptable, or should files live for the whole chat session (which we can't easily detect from the server)?
-3. `MAX_UPLOAD_MB` = 50 — ok, or match OfficeCLI's own limits?
+1. **Tool naming**: all tools prefixed `officecli_` (avoids collisions across a client's connected MCP servers). Typed tools for v1; a raw passthrough can be added later if gaps appear.
+2. **File TTL**: `WORK_TTL_SECONDS` = 3600 (1h idle). Acceptable for v1; the server can't detect chat-session end.
+3. **Max upload**: `MAX_UPLOAD_MB` = 50.
