@@ -1,0 +1,38 @@
+# Byte-compiled / cache / venv
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+env/
+.Python
+*.egg-info/
+*.egg
+build/
+dist/
+pip-wheel-metadata/
+
+# officecli binary (downloaded at runtime, not committed)
+officecli
+officecli-*
+officecli.exe
+bin/officecli
+/data/
+/work/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.coverage.*
+
+# Env
+.env
+.env.local
