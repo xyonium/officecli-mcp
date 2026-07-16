@@ -1,13 +1,18 @@
 """OpenWebUI native Tool: upload chat-attached office docs to officecli-mcp.
 
+Auth model: uses the CURRENT user's credentials - it reads the Authorization
+header (or session cookie) from OpenWebUI's injected __request__ and forwards
+it when fetching file bytes via GET /api/v1/files/{id}/content. No stored API
+key is needed, so this works correctly as a shared Public tool in multi-user
+deployments (each user fetches only their own files).
+
 Install: Workspace > Tools > paste this file. Set Valves:
   - officecli_mcp_url: e.g. http://officecli-mcp:8765
-  - openwebui_url:     e.g. http://open-webui:8080  (the in-cluster OWUI base URL)
-  - openwebui_api_key: an API key (Account Settings > API Keys) with file access.
+  - openwebui_url:     e.g. http://open-webui:8080  (in-cluster OWUI base URL)
 
-Attach this tool to a model alongside the officecli-mcp MCP connection. The model
-calls officecli_upload(__files__), gets back a file_id, and passes it to the
-officecli_* MCP tools.
+Attach this tool to a model alongside the officecli-mcp MCP connection. The
+model calls officecli_upload(__files__), gets back a file_id, and passes it to
+the officecli_* MCP tools.
 """
 from __future__ import annotations
 
@@ -22,7 +27,6 @@ class Tools:
         def __init__(self, **kwargs):
             self.officecli_mcp_url = "http://officecli-mcp:8765"
             self.openwebui_url = "http://open-webui:8080"
-            self.openwebui_api_key = ""
             for k, v in kwargs.items():
                 setattr(self, k, v)
 
@@ -30,13 +34,23 @@ class Tools:
         self.valves = self.Valves()
 
     # --- swappable HTTP helpers (monkeypatched in tests) ---
-    def _owui_get(self, file_id: str) -> bytes:
+    def _owui_headers(self, __request__: Any) -> dict[str, str]:
+        """Forward the current user's credentials so we fetch only their files."""
+        headers: dict[str, str] = {}
+        try:
+            auth = __request__.headers.get("authorization")
+            if auth:
+                headers["Authorization"] = auth
+            cookie = __request__.headers.get("cookie")
+            if cookie:
+                headers["Cookie"] = cookie
+        except Exception:
+            pass
+        return headers
+
+    def _owui_get(self, file_id: str, __request__: Any) -> bytes:
         url = f"{self.valves.openwebui_url}/api/v1/files/{file_id}/content"
-        resp = requests.get(
-            url,
-            headers={"Authorization": f"Bearer {self.valves.openwebui_api_key}"},
-            timeout=60,
-        )
+        resp = requests.get(url, headers=self._owui_headers(__request__), timeout=60)
         resp.raise_for_status()
         return resp.content
 
@@ -47,11 +61,17 @@ class Tools:
         resp.raise_for_status()
         return resp.json()
 
-    def officecli_upload(self, __files__: list[dict[str, Any]] = []) -> str:
+    def officecli_upload(
+        self,
+        __files__: list[dict[str, Any]] = [],
+        __request__: Any = None,
+    ) -> str:
         """Upload attached office files to the officecli-mcp server.
 
         Args:
             __files__: OpenWebUI-injected list of attached file dicts (have 'id' and 'name').
+            __request__: OpenWebUI-injected FastAPI Request; its Authorization/cookie
+                are forwarded so we fetch the current user's own files (no stored key).
 
         Returns:
             JSON string: {"files": [...], "hint": "..."}
@@ -70,7 +90,7 @@ class Tools:
             if not file_id:
                 continue
             try:
-                data = self._owui_get(file_id)
+                data = self._owui_get(file_id, __request__)
                 info = self._mcp_post(name, data)
                 out.append({"file_id": info["file_id"], "filename": info.get("filename", name)})
             except Exception as e:  # noqa: BLE001

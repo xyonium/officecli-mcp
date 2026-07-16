@@ -37,6 +37,17 @@ async def test_list_tools_has_prefixed_names(mcp_server):
         assert all(n.startswith("officecli_") for n in names)
 
 
+async def test_server_instructions_teach_upload_workflow(mcp_server):
+    """The model learns 'upload first, then use file_id' from server instructions."""
+    mcp, _ = mcp_server
+    async with create_connected_server_and_client_session(mcp) as session:
+        result = await session.initialize()
+    # instructions surface in the InitializeResult; fall back to the FastMCP attr.
+    text = (getattr(result, "instructions", None) or "").lower()
+    assert "file_id" in text
+    assert "officecli_upload" in text or "upload" in text
+
+
 async def test_view_html_returns_text(mcp_server):
     mcp, store = mcp_server
     info = store.put("r.docx", b"docx-bytes")
