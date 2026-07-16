@@ -23,14 +23,28 @@ def _err(msg: str) -> str:
 
 
 def build_mcp(runner: OfficeRunner, file_store: FileStore) -> FastMCP:
-    mcp = FastMCP("officecli-mcp")
+    mcp = FastMCP(
+        "officecli-mcp",
+        instructions=(
+            "Operate on Office documents (.docx/.xlsx/.pptx) by handle, never by path. "
+            "WORKFLOW: the model never holds file bytes. First get a file_id: if the user "
+            "attached a file in OpenWebUI, call the separate `officecli_upload` native tool "
+            "(it fetches the bytes and returns a file_id); or call `officecli_create` to make "
+            "a blank doc. Then pass that file_id to the officecli_* tools below. "
+            "RENDER->LOOK->FIX: use officecli_view_html (HTML text) or "
+            "officecli_view_screenshot (PNG image) to see the document, edit with "
+            "officecli_set/add/remove/edit, then view again to verify. "
+            "Selectors are officecli DOM/CSS paths like /slide[1] or /body/p[2]; run "
+            "officecli_view_annotated or officecli_view_outline to discover them."
+        ),
+    )
     # Expose runner on the instance for tests; not part of the public API.
     mcp._runner = runner  # type: ignore[attr-defined]
     mcp._file_store = file_store  # type: ignore[attr-defined]
 
     @mcp.tool(annotations=_READ_ONLY)
     def officecli_view_text(file_id: str, page: int | None = None) -> str:
-        """View the plain text of an office document (docx/xlsx/pptx)."""
+        """Plain text of the document (docx/xlsx/pptx). Read-only."""
         argv = ["view", "{path}", "text"]
         if page is not None:
             argv += ["--page", str(page)]
@@ -38,12 +52,12 @@ def build_mcp(runner: OfficeRunner, file_store: FileStore) -> FastMCP:
 
     @mcp.tool(annotations=_READ_ONLY)
     def officecli_view_html(file_id: str) -> str:
-        """Render an office document to HTML and return it (PPTX/DOCX)."""
+        """Render document to HTML (returned as text). PPTX/DOCX. Read-only."""
         return _run_text(runner, file_id, ["view", "{path}", "html"])
 
     @mcp.tool(annotations=_READ_ONLY)
     def officecli_view_screenshot(file_id: str, page: int | None = None) -> Image:
-        """Render a page of an office document to a PNG screenshot."""
+        """Render one page to a PNG image. Read-only. Use to visually verify edits."""
         argv = ["view", "{path}", "screenshot"]
         if page is not None:
             argv += ["--page", str(page)]
@@ -55,7 +69,7 @@ def build_mcp(runner: OfficeRunner, file_store: FileStore) -> FastMCP:
 
     @mcp.tool(annotations=_READ_ONLY)
     def officecli_view_annotated(file_id: str, json: bool = False) -> str:
-        """View annotated structure of the document."""
+        """Annotated structure with element selectors. Read-only. Use to find paths."""
         argv = ["view", "{path}", "annotated"]
         if json:
             argv.append("--json")
@@ -63,17 +77,17 @@ def build_mcp(runner: OfficeRunner, file_store: FileStore) -> FastMCP:
 
     @mcp.tool(annotations=_READ_ONLY)
     def officecli_view_outline(file_id: str) -> str:
-        """View the document outline (headings/slide titles)."""
+        """Document outline (headings / slide titles). Read-only."""
         return _run_text(runner, file_id, ["view", "{path}", "outline"])
 
     @mcp.tool(annotations=_READ_ONLY)
     def officecli_view_stats(file_id: str) -> str:
-        """View document stats (counts, sizes)."""
+        """Document stats (counts, sizes). Read-only."""
         return _run_text(runner, file_id, ["view", "{path}", "stats"])
 
     @mcp.tool(annotations=_READ_ONLY)
     def officecli_view_issues(file_id: str, json: bool = False) -> str:
-        """View content/layout issues in the document."""
+        """Content/layout issues. Read-only. Use before declaring a doc done."""
         argv = ["view", "{path}", "issues"]
         if json:
             argv.append("--json")
@@ -81,7 +95,7 @@ def build_mcp(runner: OfficeRunner, file_store: FileStore) -> FastMCP:
 
     @mcp.tool(annotations=_READ_ONLY)
     def officecli_get(file_id: str, selector: str, depth: int | None = None, json: bool = False) -> str:
-        """Get an element by DOM/CSS selector."""
+        """Get an element by selector (e.g. /slide[1]). Read-only."""
         argv = ["get", "{path}", selector]
         if depth is not None:
             argv += ["--depth", str(depth)]
@@ -91,7 +105,7 @@ def build_mcp(runner: OfficeRunner, file_store: FileStore) -> FastMCP:
 
     @mcp.tool(annotations=_WRITE)
     def officecli_set(file_id: str, selector: str, prop: str) -> str:
-        """Set a property on elements matched by selector. prop is 'key=value'."""
+        """Set a property on matched elements. prop is 'key=value'."""
         return _run_text(runner, file_id, ["set", "{path}", selector, "--prop", prop])
 
     @mcp.tool(annotations=_WRITE)
@@ -105,7 +119,7 @@ def build_mcp(runner: OfficeRunner, file_store: FileStore) -> FastMCP:
 
     @mcp.tool(annotations=_WRITE)
     def officecli_add(file_id: str, selector: str, type: str, prop: str | None = None) -> str:
-        """Add an element under the selector."""
+        """Add an element. selector=/ for top-level (e.g. add a slide with type=slide)."""
         argv = ["add", "{path}", selector, "--type", type]
         if prop:
             argv += ["--prop", prop]
@@ -113,7 +127,7 @@ def build_mcp(runner: OfficeRunner, file_store: FileStore) -> FastMCP:
 
     @mcp.tool(annotations=_WRITE)
     def officecli_remove(file_id: str, selector: str) -> str:
-        """Remove elements matched by selector."""
+        """Remove matched elements."""
         return _run_text(runner, file_id, ["remove", "{path}", selector])
 
     @mcp.tool(annotations=_WRITE)
@@ -128,7 +142,7 @@ def build_mcp(runner: OfficeRunner, file_store: FileStore) -> FastMCP:
 
     @mcp.tool(annotations=_READ_ONLY)
     def officecli_validate(file_id: str, json: bool = False) -> str:
-        """Validate the document against the OpenXML schema."""
+        """Validate against the OpenXML schema. Read-only."""
         argv = ["validate", "{path}"]
         if json:
             argv.append("--json")
@@ -136,7 +150,7 @@ def build_mcp(runner: OfficeRunner, file_store: FileStore) -> FastMCP:
 
     @mcp.tool(annotations=_WRITE)
     def officecli_batch(file_id: str, commands_json: str) -> str:
-        """Run a batch of commands (JSON) in one open/save cycle."""
+        """Run many commands (JSON array) in one open/save cycle."""
         return _run_text(runner, file_id, ["batch", "{path}", "--commands", commands_json])
 
     @mcp.tool(annotations=_WRITE)
