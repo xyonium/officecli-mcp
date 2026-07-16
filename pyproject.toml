@@ -26,6 +26,8 @@ dev = [
     "trio>=0.25",
     "ruff>=0.6",
     "build>=1.2",
+    # The OpenWebUI upload shim (examples/) uses requests; needed to import it in tests.
+    "requests>=2.31",
 ]
 
 [project.scripts]
