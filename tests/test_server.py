@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-import pytest
 from starlette.testclient import TestClient
 
 
@@ -42,7 +41,6 @@ def test_mcp_endpoint_serves_via_real_http(settings, tmp_path, monkeypatch):
     Uses uvicorn on a real port + streamable_http_client (the same client
     OpenWebUI uses), so the session-manager lifespan actually runs.
     """
-    import os
     import threading
     import time
 

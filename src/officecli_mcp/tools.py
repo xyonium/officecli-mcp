@@ -168,8 +168,8 @@ def _run(runner: OfficeRunner, file_id: str, argv: list[str]):
 def _run_text(runner: OfficeRunner, file_id: str, argv: list[str]) -> str:
     try:
         res = runner.run(file_id, argv)
-    except FileIDNotFound:
-        raise ToolError(f"file_id '{file_id}' not found or expired")
+    except FileIDNotFound as e:
+        raise ToolError(f"file_id '{file_id}' not found or expired") from e
     if res.exit_code != 0:
         raise ToolError(f"officecli exited {res.exit_code}: {res.stderr.strip()}")
     return res.stdout.strip()

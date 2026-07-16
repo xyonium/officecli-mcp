@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-import stat
 from pathlib import Path
 
 import pytest
@@ -13,8 +11,8 @@ def _write_stub(path: Path, script: str) -> None:
 
 
 def test_run_text_returns_stdout(settings, tmp_path, monkeypatch):
-    from officecli_mcp.runner import OfficeRunner
     from officecli_mcp.files import FileStore
+    from officecli_mcp.runner import OfficeRunner
 
     store = FileStore(work_dir=settings.work_dir, ttl_seconds=3600)
     info = store.put("r.docx", b"docx-bytes")
@@ -29,8 +27,8 @@ def test_run_text_returns_stdout(settings, tmp_path, monkeypatch):
 
 
 def test_run_html_intercept_returns_text(settings, tmp_path):
-    from officecli_mcp.runner import OfficeRunner
     from officecli_mcp.files import FileStore
+    from officecli_mcp.runner import OfficeRunner
 
     store = FileStore(work_dir=settings.work_dir, ttl_seconds=3600)
     info = store.put("r.docx", b"docx-bytes")
@@ -45,8 +43,8 @@ def test_run_html_intercept_returns_text(settings, tmp_path):
 
 
 def test_run_screenshot_intercept_writes_png(settings, tmp_path):
-    from officecli_mcp.runner import OfficeRunner
     from officecli_mcp.files import FileStore
+    from officecli_mcp.runner import OfficeRunner
 
     store = FileStore(work_dir=settings.work_dir, ttl_seconds=3600)
     info = store.put("r.pptx", b"pptx-bytes")
@@ -76,8 +74,8 @@ def test_run_screenshot_intercept_writes_png(settings, tmp_path):
 
 
 def test_run_substitutes_path_token(settings, tmp_path):
-    from officecli_mcp.runner import OfficeRunner
     from officecli_mcp.files import FileStore
+    from officecli_mcp.runner import OfficeRunner
 
     store = FileStore(work_dir=settings.work_dir, ttl_seconds=3600)
     info = store.put("r.docx", b"docx-bytes")
@@ -93,8 +91,8 @@ def test_run_substitutes_path_token(settings, tmp_path):
 
 
 def test_run_unknown_file_id_raises(settings, tmp_path):
-    from officecli_mcp.runner import OfficeRunner, FileIDNotFound
     from officecli_mcp.files import FileStore
+    from officecli_mcp.runner import FileIDNotFound, OfficeRunner
 
     store = FileStore(work_dir=settings.work_dir, ttl_seconds=3600)
     stub = tmp_path / "officecli"
@@ -105,8 +103,8 @@ def test_run_unknown_file_id_raises(settings, tmp_path):
 
 
 def test_run_nonzero_exit_captured(settings, tmp_path):
-    from officecli_mcp.runner import OfficeRunner
     from officecli_mcp.files import FileStore
+    from officecli_mcp.runner import OfficeRunner
 
     store = FileStore(work_dir=settings.work_dir, ttl_seconds=3600)
     info = store.put("r.docx", b"docx-bytes")

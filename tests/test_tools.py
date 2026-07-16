@@ -13,9 +13,9 @@ def _write_stub(path: Path, script: str) -> None:
 
 @pytest.fixture
 def mcp_server(settings, tmp_path):
+    from officecli_mcp import tools as tools_mod
     from officecli_mcp.files import FileStore
     from officecli_mcp.runner import OfficeRunner
-    from officecli_mcp import tools as tools_mod
 
     store = FileStore(work_dir=settings.work_dir, ttl_seconds=3600)
     stub = tmp_path / "officecli"

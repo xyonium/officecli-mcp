@@ -4,8 +4,6 @@ import os
 import stat
 from pathlib import Path
 
-import pytest
-
 
 def test_asset_name_linux_x64(monkeypatch):
     from officecli_mcp import binary

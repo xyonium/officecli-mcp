@@ -1,7 +1,6 @@
 """Shared pytest fixtures."""
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
@@ -13,7 +12,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 
 @pytest.fixture
-def settings(tmp_path: Path) -> "object":
+def settings(tmp_path: Path) -> object:
     from officecli_mcp.config import Settings
 
     return Settings(

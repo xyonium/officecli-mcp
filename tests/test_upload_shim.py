@@ -3,7 +3,6 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-import pytest
 from starlette.applications import Starlette
 from starlette.responses import Response
 from starlette.routing import Route

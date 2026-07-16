@@ -5,14 +5,14 @@ import os
 import time
 from pathlib import Path
 
-import pytest
 from starlette.testclient import TestClient
 
 
 def _make_app(settings):
-    from officecli_mcp.files import build_files_router, FileStore
     from starlette.applications import Starlette
     from starlette.routing import Mount
+
+    from officecli_mcp.files import FileStore, build_files_router
 
     store = FileStore(work_dir=settings.work_dir, ttl_seconds=settings.work_ttl_seconds)
     app = Starlette(routes=[Mount("/", app=build_files_router(store, settings))])
