@@ -1,0 +1,25 @@
+services:
+  officecli-mcp:
+    build: .
+    image: officecli-mcp:latest
+    container_name: officecli-mcp
+    ports:
+      - "8765:8765"
+    volumes:
+      - officecli-data:/data
+      - officecli-work:/work
+    environment:
+      OFFICECLI_MCP_TRANSPORT: http
+      OFFICECLI_MCP_HOST: 0.0.0.0
+      OFFICECLI_MCP_PORT: "8765"
+      # OFFICECLI_MCP_API_KEY: set-to-lock-down-the-http-surface
+      # OFFICECLI_SHA256: optional-pin
+    restart: unless-stopped
+
+  # Reference: OpenWebUI connects to http://officecli-mcp:8765/mcp (native MCP,
+  # streamable-HTTP) and POSTs uploads to http://officecli-mcp:8765/files via
+  # the officecli_upload native tool (examples/openwebui_officecli_upload.py).
+
+volumes:
+  officecli-data:
+  officecli-work:
