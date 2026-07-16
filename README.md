@@ -86,8 +86,8 @@ All MCP tools are prefixed `officecli_` and take a `file_id` handle (returned by
 
 ## OpenWebUI setup
 
-1. Enable API keys (`ENABLE_API_KEYS=true`); generate one in Account Settings > API Keys.
-2. Install the native tool [`examples/openwebui_officecli_upload.py`](examples/openwebui_officecli_upload.py) (Workspace > Tools); set Valves (`officecli_mcp_url`, `openwebui_url`, `openwebui_api_key`); make it Public; attach to the model.
+1. Keep API keys enabled (`ENABLE_API_KEYS=true`, the default). The upload shim does **not** need a stored key - it forwards the current user's credentials via the injected `__request__`, so it works as a shared Public tool in multi-user setups (each user fetches only their own files).
+2. Install the native tool [`examples/openwebui_officecli_upload.py`](examples/openwebui_officecli_upload.py) (Workspace > Tools); set Valves (`officecli_mcp_url`, `openwebui_url`); make it Public; attach to the model.
 3. Add MCP connection: `http://officecli-mcp:8765/mcp` (Settings > Connections).
 4. Ensure the OpenWebUI pod can reach the officecli-mcp pod.
 
