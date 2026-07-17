@@ -26,6 +26,32 @@ def test_run_text_returns_stdout(settings, tmp_path, monkeypatch):
     assert res.image_path is None
 
 
+def test_subprocess_env_forces_dotnet_globalization_invariant(settings, tmp_path, monkeypatch):
+    """officecli (.NET) crashes without ICU; we force invariant mode in the env.
+
+    Guards against regression: a stub echoes the var the real binary relies on,
+    so this fails if _subprocess_env stops setting it.
+    """
+    from officecli_mcp.files import FileStore
+    from officecli_mcp.runner import OfficeRunner, _subprocess_env
+
+    # Defense in depth: even with the var unset in our own process, the runner
+    # must inject it for the officecli subprocess.
+    monkeypatch.delenv("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT", raising=False)
+    env = _subprocess_env()
+    assert env["DOTNET_SYSTEM_GLOBALIZATION_INVARIANT"] == "1"
+    assert env["OFFICECLI_NO_AUTO_RESIDENT"] == "1"
+
+    # And it must actually reach the spawned binary.
+    stub = tmp_path / "officecli"
+    _write_stub(stub, "#!/bin/sh\necho \"INV=$DOTNET_SYSTEM_GLOBALIZATION_INVARIANT\"\n")
+    store = FileStore(work_dir=settings.work_dir, ttl_seconds=3600)
+    info = store.put("r.docx", b"x")
+    runner = OfficeRunner(binary_path=str(stub), file_store=store)
+    res = runner.run(info["file_id"], ["view", "{path}", "text"])
+    assert "INV=1" in res.stdout
+
+
 def test_run_html_intercept_returns_text(settings, tmp_path):
     from officecli_mcp.files import FileStore
     from officecli_mcp.runner import OfficeRunner
