@@ -26,7 +26,28 @@ def build_app(settings: Settings):
 
     file_store = FileStore(work_dir=settings.work_dir, ttl_seconds=settings.work_ttl_seconds)
     runner = OfficeRunner(binary_path=bin_path, file_store=file_store)
-    mcp = build_mcp(runner=runner, file_store=file_store)
+
+    # DNS-rebinding / Host-header guard for the streamable-HTTP endpoint.
+    # OpenWebUI reaches us by service name (Host: officecli-mcp:8765); the SDK's
+    # default guard only allow-lists localhost, so cross-container traffic gets
+    # 421 "Invalid Host header" unless the name is declared here. Pass host= so
+    # the SDK does not re-enable a localhost-only guard on top of our explicit one.
+    # We always pass an explicit TransportSecuritySettings so the operator's
+    # enable/disable choice is honored even on a 127.0.0.1 bind (passing None
+    # would let FastMCP auto-enable protection and ignore our toggle).
+    from mcp.server.transport_security import TransportSecuritySettings
+
+    transport_security = TransportSecuritySettings(
+        enable_dns_rebinding_protection=settings.dns_rebinding_protection,
+        allowed_hosts=list(settings.allowed_hosts),
+        allowed_origins=[f"http://{h}" for h in settings.allowed_hosts],
+    )
+    mcp = build_mcp(
+        runner=runner,
+        file_store=file_store,
+        host=settings.host,
+        transport_security=transport_security,
+    )
 
     # Custom HTTP routes share the same process/workdir as the MCP tools.
     @mcp.custom_route("/files", methods=["POST"])

@@ -2,7 +2,12 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+# Host headers the MCP streamable-HTTP endpoint is reachable by, when DNS
+# rebinding protection is on. Cross-container clients (OpenWebUI calling
+# http://officecli-mcp:8765/mcp) must be allow-listed here or they get 421.
+_DEFAULT_ALLOWED_HOSTS = ("127.0.0.1:*", "localhost:*", "[::1]:*")
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -19,6 +24,20 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _parse_allowed_hosts() -> tuple[str, ...]:
+    """OFFICECLI_MCP_ALLOWED_HOSTS overrides the default localhost set, not augments.
+
+    Comma-separated. Exact host values or "host:*" wildcard-port patterns:
+    set "officecli-mcp:8765" to allow that exact Host, or "officecli-mcp:*" to
+    allow any port on that name. When unset, falls back to localhost-only.
+    """
+    raw = os.environ.get("OFFICECLI_MCP_ALLOWED_HOSTS")
+    if raw is None:
+        return _DEFAULT_ALLOWED_HOSTS
+    hosts = tuple(h.strip() for h in raw.split(",") if h.strip())
+    return hosts
+
+
 @dataclass(frozen=True)
 class Settings:
     transport: str = os.environ.get("OFFICECLI_MCP_TRANSPORT", "http")
@@ -32,6 +51,9 @@ class Settings:
     officecli_sha256: str = os.environ.get("OFFICECLI_SHA256", "")
     api_key: str = os.environ.get("OFFICECLI_MCP_API_KEY", "")
     allowed_extensions: tuple[str, ...] = ("docx", "xlsx", "pptx")
+    # MCP streamable-HTTP DNS-rebinding / Host-header guard (mcp sdk transport_security).
+    dns_rebinding_protection: bool = _env_bool("OFFICECLI_MCP_DNS_REBINDING_PROTECTION", True)
+    allowed_hosts: tuple[str, ...] = field(default_factory=_parse_allowed_hosts)
 
     @property
     def binary_path(self) -> str:

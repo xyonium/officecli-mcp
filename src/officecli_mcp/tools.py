@@ -7,6 +7,7 @@ import uuid
 
 from mcp.server.fastmcp import FastMCP, Image
 from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 
 from officecli_mcp.files import FileStore
@@ -22,7 +23,13 @@ def _err(msg: str) -> str:
     return f"ERROR: {msg}"
 
 
-def build_mcp(runner: OfficeRunner, file_store: FileStore) -> FastMCP:
+def build_mcp(
+    runner: OfficeRunner,
+    file_store: FileStore,
+    *,
+    host: str = "0.0.0.0",
+    transport_security: TransportSecuritySettings | None = None,
+) -> FastMCP:
     mcp = FastMCP(
         "officecli-mcp",
         instructions=(
@@ -37,6 +44,11 @@ def build_mcp(runner: OfficeRunner, file_store: FileStore) -> FastMCP:
             "Selectors are officecli DOM/CSS paths like /slide[1] or /body/p[2]; run "
             "officecli_view_annotated or officecli_view_outline to discover them."
         ),
+        # Pass the real bind host so FastMCP's auto DNS-rebinding guard only
+        # fires for true localhost binds. We supply an explicit
+        # transport_security below to own the allowed_hosts list regardless.
+        host=host,
+        transport_security=transport_security,
     )
     # Expose runner on the instance for tests; not part of the public API.
     mcp._runner = runner  # type: ignore[attr-defined]
