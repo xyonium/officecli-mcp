@@ -29,6 +29,10 @@ OpenWebUI (pod A)                         officecli-mcp (pod B)
 - **Primary**: streamable-HTTP (OpenWebUI native MCP, v0.6.31+, is streamable-HTTP-only — connect directly, no mcpo needed).
 - **Fallback**: stdio (wrap with [mcpo](https://github.com/open-webui/mcpo) for OpenAPI/OpenWebUI if needed).
 
+## Runtime dependency: .NET globalization
+
+`officecli` is a self-contained .NET app. On a slim image without `libicu` it fails fast (`Couldn't find a valid ICU package`). Rather than bundle ICU, we run .NET in **globalization-invariant mode** (`DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1`, set in the `Dockerfile` and injected by the runner subprocess env). This only affects locale-aware culture data (dates/numbers use invariant culture) and is fine for office document manipulation. If you ever need full locale support, `apt-get install libicu` in your image and unset that variable.
+
 ## Status
 
 ✅ Implemented and verified end-to-end against the real `officecli` binary (v1.0.136). See [`docs/`](docs/) for the design spec and implementation plan.
@@ -83,6 +87,8 @@ All MCP tools are prefixed `officecli_` and take a `file_id` handle (returned by
 | `OFFICECLI_VERSION` | latest | pin a release tag |
 | `OFFICECLI_SHA256` | (none) | verify binary integrity |
 | `OFFICECLI_MCP_API_KEY` | (none) | if set, require Bearer on HTTP surface |
+| `OFFICECLI_MCP_ALLOWED_HOSTS` | `127.0.0.1:*,localhost:*,[::1]:*` | comma-separated `Host` headers the `/mcp` endpoint is reachable by (use `host:*` for any port). OpenWebUI calls `http://officecli-mcp:8765/mcp` across the docker network, so the docker service name must be listed or clients get 421 `Invalid Host header`. The compose file sets this to `officecli-mcp:8765,localhost:8765,127.0.0.1:8765`. |
+| `OFFICECLI_MCP_DNS_REBINDING_PROTECTION` | 1 | the MCP SDK DNS-rebinding / Host-header guard; set `0` to disable it entirely |
 
 ## OpenWebUI setup
 
