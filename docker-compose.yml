@@ -12,6 +12,13 @@ services:
       OFFICECLI_MCP_TRANSPORT: http
       OFFICECLI_MCP_HOST: 0.0.0.0
       OFFICECLI_MCP_PORT: "8765"
+      # Comma-separated Host headers the /mcp endpoint is reachable by. OpenWebUI
+      # calls http://officecli-mcp:8765/mcp across the docker network, so the
+      # inbound Host header is "officecli-mcp:8765" — allow-list it or the MCP
+      # SDK's DNS-rebinding guard returns 421 "Invalid Host header". Use "host:*"
+      # to allow any port on <host>. Unset = localhost-only.
+      OFFICECLI_MCP_ALLOWED_HOSTS: "officecli-mcp:8765,localhost:8765,127.0.0.1:8765"
+      # OFFICECLI_MCP_DNS_REBINDING_PROTECTION: "1"  # default on; "0" disables the Host/Origin guard
       # OFFICECLI_MCP_API_KEY: set-to-lock-down-the-http-surface
       # OFFICECLI_SHA256: optional-pin
     restart: unless-stopped

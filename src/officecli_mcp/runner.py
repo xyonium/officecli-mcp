@@ -16,6 +16,21 @@ class FileIDNotFound(Exception):
     """The file_id is unknown or expired."""
 
 
+def _subprocess_env() -> dict[str, str]:
+    """Env for officecli subprocesses.
+
+    officecli is a self-contained .NET app that hard-crashes without ICU
+    ("Couldn't find a valid ICU package"). We bundle no libicu, so force .NET
+    globalization-invariant mode. Set here (not just in the Dockerfile) so
+    local-dev runs without the container ENV also work, and so a tool that
+    later spawns officecli outside our normal path still inherits it.
+    """
+    env = dict(os.environ)
+    env.setdefault("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT", "1")
+    env["OFFICECLI_NO_AUTO_RESIDENT"] = "1"
+    return env
+
+
 @dataclass
 class RunResult:
     exit_code: int
@@ -53,15 +68,12 @@ class OfficeRunner:
             image_path = str(Path(cwd) / "shot.png")
             argv += ["-o", image_path]
 
-        env = dict(os.environ)
-        env["OFFICECLI_NO_AUTO_RESIDENT"] = "1"
-
         proc = subprocess.run(
             [self.binary_path, *argv],
             cwd=cwd,
             capture_output=True,
             text=True,
-            env=env,
+            env=_subprocess_env(),
         )
         return RunResult(
             exit_code=proc.returncode,
@@ -75,14 +87,12 @@ class OfficeRunner:
 
     def _raw_run(self, argv: list[str], cwd: str) -> RunResult:
         """Run an arbitrary officecli argv with no {path} substitution."""
-        env = dict(os.environ)
-        env["OFFICECLI_NO_AUTO_RESIDENT"] = "1"
         proc = subprocess.run(
             [self.binary_path, *argv],
             cwd=cwd,
             capture_output=True,
             text=True,
-            env=env,
+            env=_subprocess_env(),
         )
         return RunResult(
             exit_code=proc.returncode,

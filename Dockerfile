@@ -3,7 +3,13 @@ FROM python:3.11-slim
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     OFFICECLI_MCP_DATA_DIR=/data \
-    OFFICECLI_MCP_WORK_DIR=/work
+    OFFICECLI_MCP_WORK_DIR=/work \
+    # officecli is a self-contained .NET app that fails fast without ICU
+    # ("Couldn't find a valid ICU package"). The image has no libicu; run .NET
+    # in globalization-invariant mode instead of bundling ICU. This is the
+    # upstream-recommended, package-free path and keeps the image small. Only
+    # affects locale-aware culture data — fine for office document manipulation.
+    DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 
 WORKDIR /app
 
