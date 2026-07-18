@@ -12,7 +12,7 @@ OpenWebUI (pod A)                         officecli-mcp (pod B)
 │ LLM ──► native MCP client    │  HTTP    │ FastMCP (streamable-HTTP)       │
 │         (streamable-HTTP) ────┼──────────►  tools: create, view_html,     │
 │                                │          │         view_screenshot, edit… │
-│ Native Tool "officecli_file"│          │                                 │
+│ Native Tool "officecli_file"  │          │                                 │
 │   reads __files__, fetches    │  HTTP    │ HTTP /files  (upload → file_id)│
 │   bytes, POSTs ───────────────┼──────────► /files/{id} (download)        │
 │   returns file_id to LLM      │          │                                 │
