@@ -157,11 +157,12 @@ that isn't shot.png" -> could return `kimi.png` and make the runner operate on
 the asset instead of the document.
 
 Fix (option A, approved): `path_for` returns only **document-extension** files
-(ext in `_SAFE_EXT` = docx/xlsx/pptx); drop the `!= "shot.png"` special-case
-(now subsumed). If no document file exists, raise `KeyError` (unchanged).
+(ext in `_SAFE_EXT` = docx/xlsx/pptx); the `!= "shot.png"` special-case is
+removed (subsumed by the extension whitelist - shot.png is ext png, excluded).
+If no document file exists, raise `KeyError` (unchanged).
 ```python
-files = [p for p in d.iterdir() if p.is_file() and p.name != "shot.png"]
-docs = [p for p in files if p.suffix.lower().lstrip(".") in _SAFE_EXT]
+docs = [p for p in d.iterdir()
+        if p.is_file() and p.suffix.lower().lstrip(".") in _SAFE_EXT]
 if not docs:
     raise KeyError(file_id)
 return docs[0]
