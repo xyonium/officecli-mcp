@@ -12,7 +12,7 @@ OpenWebUI (pod A)                         officecli-mcp (pod B)
 │ LLM ──► native MCP client    │  HTTP    │ FastMCP (streamable-HTTP)       │
 │         (streamable-HTTP) ────┼──────────►  tools: create, view_html,     │
 │                                │          │         view_screenshot, edit… │
-│ Native Tool "officecli_upload"│          │                                 │
+│ Native Tool "officecli_file"│          │                                 │
 │   reads __files__, fetches    │  HTTP    │ HTTP /files  (upload → file_id)│
 │   bytes, POSTs ───────────────┼──────────► /files/{id} (download)        │
 │   returns file_id to LLM      │          │                                 │
@@ -39,7 +39,7 @@ OpenWebUI (pod A)                         officecli-mcp (pod B)
 docker compose up -d   # serves http://localhost:8765 (auto-pulls officecli on first start)
 ```
 
-OpenWebUI: add an MCP connection at `http://officecli-mcp:8765/mcp` (native MCP, streamable-HTTP), and install the `officecli_upload` native tool from [`examples/openwebui_officecli_upload.py`](examples/openwebui_officecli_upload.py) with its Valves set.
+OpenWebUI: add an MCP connection at `http://officecli-mcp:8765/mcp` (native MCP, streamable-HTTP), and install the `officecli_file` native tool from [`examples/openwebui_officecli_file.py`](examples/openwebui_officecli_file.py) with its Valves set (`officecli_mcp_url`, `openwebui_url`, `openwebui_browser_url`).
 
 ## Local dev
 
@@ -58,7 +58,7 @@ OFFICECLI_BIN=/tmp/officecli python3 -m pytest tests/test_e2e_real.py -v
 
 ## Tools
 
-All MCP tools are prefixed `officecli_` and take a `file_id` handle (returned by `POST /files` or the `officecli_upload` tool):
+All MCP tools are prefixed `officecli_` and take a `file_id` handle (returned by `POST /files` or the `officecli_file` tool (action="upload")):
 
 | Tool | Purpose |
 |---|---|
@@ -87,7 +87,7 @@ All MCP tools are prefixed `officecli_` and take a `file_id` handle (returned by
 ## OpenWebUI setup
 
 1. Keep API keys enabled (`ENABLE_API_KEYS=true`, the default). The upload shim does **not** need a stored key - it forwards the current user's credentials via the injected `__request__`, so it works as a shared Public tool in multi-user setups (each user fetches only their own files).
-2. Install the native tool [`examples/openwebui_officecli_upload.py`](examples/openwebui_officecli_upload.py) (Workspace > Tools); set Valves (`officecli_mcp_url`, `openwebui_url`); make it Public; attach to the model.
+2. Install the native tool [`examples/openwebui_officecli_file.py`](examples/openwebui_officecli_file.py) (Workspace > Tools); set Valves (`officecli_mcp_url`, `openwebui_url`, `openwebui_browser_url=https://ai.savorcare.com`); make it Public; attach to the model. Use `action="upload"` to get a `file_id` from attached files, `action="download"` to get a browser-reachable download link for a finished file.
 3. Add MCP connection: `http://officecli-mcp:8765/mcp` (Settings > Connections).
 4. Ensure the OpenWebUI pod can reach the officecli-mcp pod.
 

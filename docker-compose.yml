@@ -18,7 +18,7 @@ services:
 
   # Reference: OpenWebUI connects to http://officecli-mcp:8765/mcp (native MCP,
   # streamable-HTTP) and POSTs uploads to http://officecli-mcp:8765/files via
-  # the officecli_upload native tool (examples/openwebui_officecli_upload.py).
+  # the officecli_file native tool (examples/openwebui_officecli_file.py).
 
 volumes:
   officecli-data:
