@@ -149,6 +149,25 @@ def build_mcp(
         return _run_text(runner, file_id, argv)
 
     @mcp.tool(annotations=_WRITE)
+    def officecli_import(
+        file_id: str,
+        sheet: str,
+        source: str,
+        header: bool = False,
+        start_cell: str = "A1",
+        format: str | None = None,
+    ) -> str:
+        """Import CSV/TSV into an Excel sheet. source is a staged asset filename
+        (drop it first via officecli_file action='stage'). sheet e.g. /Sheet1."""
+        argv = ["import", "{path}", sheet, source]
+        if header:
+            argv.append("--header")
+        argv += ["--start-cell", start_cell]
+        if format:
+            argv += ["--format", format]
+        return _run_text(runner, file_id, argv)
+
+    @mcp.tool(annotations=_WRITE)
     def officecli_remove(file_id: str, selector: str) -> str:
         """Remove matched elements."""
         return _run_text(runner, file_id, ["remove", "{path}", selector])

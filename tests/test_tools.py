@@ -157,3 +157,44 @@ async def test_set_multi_prop(mcp_server, tmp_path):
         )
     argv = rec.read_text().splitlines()
     assert argv.count("--prop") == 2
+
+
+async def test_import_tool_argv(mcp_server, tmp_path):
+    mcp, store = mcp_server
+    info = store.put("r.xlsx", b"xlsx-bytes")
+    rec = tmp_path / "argv.txt"
+    stub = Path(mcp._runner.binary_path)
+    stub.write_text(f"#!/bin/sh\nprintf '%s\\n' \"$@\" > {rec}\necho IMPORTED\n")
+    stub.chmod(0o755)
+
+    async with create_connected_server_and_client_session(mcp) as session:
+        await session.initialize()
+        res = await session.call_tool(
+            "officecli_import",
+            {
+                "file_id": info["file_id"],
+                "sheet": "/Sheet1",
+                "source": "kpi.csv",
+                "header": True,
+                "start_cell": "B2",
+                "format": "csv",
+            },
+        )
+        assert not res.isError, res.content
+    argv = rec.read_text().splitlines()
+    assert argv[0] == "import"
+    assert "/Sheet1" in argv
+    assert "kpi.csv" in argv
+    assert "--header" in argv
+    assert "--start-cell" in argv
+    assert argv[argv.index("--start-cell") + 1] == "B2"
+    assert "--format" in argv
+    assert argv[argv.index("--format") + 1] == "csv"
+
+
+async def test_import_tool_listed(mcp_server):
+    mcp, _ = mcp_server
+    async with create_connected_server_and_client_session(mcp) as session:
+        await session.initialize()
+        tools = await session.list_tools()
+        assert "officecli_import" in {t.name for t in tools.tools}
