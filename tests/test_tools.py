@@ -192,6 +192,17 @@ async def test_import_tool_argv(mcp_server, tmp_path):
     assert argv[argv.index("--format") + 1] == "csv"
 
 
+async def test_instructions_teach_stage_workflow(mcp_server):
+    """The model learns 'stage->add picture / import' from server instructions."""
+    mcp, _ = mcp_server
+    async with create_connected_server_and_client_session(mcp) as session:
+        result = await session.initialize()
+    text = (getattr(result, "instructions", None) or "").lower()
+    assert "stage" in text
+    assert "picture" in text
+    assert "officecli_import" in text
+
+
 async def test_import_tool_listed(mcp_server):
     mcp, _ = mcp_server
     async with create_connected_server_and_client_session(mcp) as session:
