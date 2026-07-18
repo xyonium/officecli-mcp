@@ -70,9 +70,11 @@ All MCP tools are prefixed `officecli_` and take a `file_id` handle (returned by
 | `officecli_view_html` | render to HTML (returned as text) |
 | `officecli_view_screenshot` | render a page to PNG (base64 image) |
 | `officecli_view_text` / `_annotated` / `_outline` / `_stats` / `_issues` | various text views |
-| `officecli_get` / `_set` / `_add` / `_remove` / `_move` / `_swap` / `_edit` | DOM edits |
+| `officecli_get` / `_set` / `_add` / `_remove` / `_move` / `_swap` / `_edit` | DOM edits (add supports `prop` list for pictures: `["src=<asset>","width=200"]`) |
+| `officecli_import` | CSV/TSV -> Excel via staged `source` filename |
 | `officecli_validate` | OpenXML schema validation |
 | `officecli_batch` | multi-command batch |
+| `officecli_file(action="stage")` | drop an image/CSV into a doc's workdir (returns `asset` name for `src=` or `source=` in other tools) |
 
 ## Configuration (env)
 
@@ -93,7 +95,7 @@ All MCP tools are prefixed `officecli_` and take a `file_id` handle (returned by
 ## OpenWebUI setup
 
 1. Keep API keys enabled (`ENABLE_API_KEYS=true`, the default). The upload shim does **not** need a stored key - it forwards the current user's credentials via the injected `__request__`, so it works as a shared Public tool in multi-user setups (each user fetches only their own files).
-2. Install the native tool [`examples/openwebui_officecli_file.py`](examples/openwebui_officecli_file.py) (Workspace > Tools); set Valves (`officecli_mcp_url`, `openwebui_url`, `openwebui_browser_url=https://ai.savorcare.com`); make it Public; attach to the model. Use `action="upload"` to get a `file_id` from attached files, `action="download"` to get a browser-reachable download link for a finished file.
+2. Install the native tool [`examples/openwebui_officecli_file.py`](examples/openwebui_officecli_file.py) (Workspace > Tools); set Valves (`officecli_mcp_url`, `openwebui_url`, `openwebui_browser_url=https://ai.savorcare.com`); make it Public; attach to the model. Use `action="upload"` to get a `file_id` from attached files, `action="download"` to get a browser-reachable download link for a finished file, or `action="stage"` to drop a generated/uploaded image or CSV into a document's workdir (returns an asset filename for `officecli_add type=picture` or `officecli_import`).
 3. Add MCP connection: `http://officecli-mcp:8765/mcp` (Settings > Connections).
 4. Ensure the OpenWebUI pod can reach the officecli-mcp pod.
 
