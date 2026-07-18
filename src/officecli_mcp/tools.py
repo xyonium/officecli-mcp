@@ -119,9 +119,13 @@ def build_mcp(
         return _run_text(runner, file_id, argv)
 
     @mcp.tool(annotations=_WRITE)
-    def officecli_set(file_id: str, selector: str, prop: str) -> str:
-        """Set a property on matched elements. prop is 'key=value'."""
-        return _run_text(runner, file_id, ["set", "{path}", selector, "--prop", prop])
+    def officecli_set(file_id: str, selector: str, prop: list[str] | None = None) -> str:
+        """Set a property on matched elements. prop is a list of 'key=value'."""
+        argv = ["set", "{path}", selector]
+        if prop:
+            for p in prop:
+                argv += ["--prop", p]
+        return _run_text(runner, file_id, argv)
 
     @mcp.tool(annotations=_WRITE)
     def officecli_edit(file_id: str, find: str, replace: str) -> str:
@@ -133,11 +137,15 @@ def build_mcp(
         )
 
     @mcp.tool(annotations=_WRITE)
-    def officecli_add(file_id: str, selector: str, type: str, prop: str | None = None) -> str:
-        """Add an element. selector=/ for top-level (e.g. add a slide with type=slide)."""
+    def officecli_add(file_id: str, selector: str, type: str, prop: list[str] | None = None) -> str:
+        """Add an element. selector=/ for top-level (e.g. add a slide with type=slide).
+
+        prop is a list of 'key=value' (e.g. ["src=kimi.png","width=5in"] for a picture).
+        """
         argv = ["add", "{path}", selector, "--type", type]
         if prop:
-            argv += ["--prop", prop]
+            for p in prop:
+                argv += ["--prop", p]
         return _run_text(runner, file_id, argv)
 
     @mcp.tool(annotations=_WRITE)
