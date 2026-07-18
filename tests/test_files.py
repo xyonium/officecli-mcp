@@ -142,3 +142,70 @@ def test_path_for_with_only_non_doc_file_raises(settings):
     (d / "kimi.png").write_bytes(b"\x89PNG")
     with pytest.raises(KeyError):
         store.path_for("lonely")
+
+
+def test_stage_endpoint_multipart(settings):
+    app, store = _make_app(settings)
+    # Seed a target document.
+    doc = store.put("deck.pptx", b"PK\x03\x04pptx")
+    client = TestClient(app)
+    resp = client.post(
+        "/files/stage",
+        data={"target_file_id": doc["file_id"], "filename": "kimi.png"},
+        files={"file": ("kimi.png", b"\x89PNGfake", "image/png")},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["asset"] == "kimi.png"
+    assert body["target"] == doc["file_id"]
+    assert Path(settings.work_dir, doc["file_id"], "kimi.png").exists()
+
+
+def test_stage_endpoint_base64(settings):
+    app, store = _make_app(settings)
+    doc = store.put("deck.pptx", b"PK\x03\x04pptx")
+    client = TestClient(app)
+    data = base64.b64encode(b"\x89PNGfake").decode()
+    resp = client.post(
+        "/files/stage",
+        json={"target_file_id": doc["file_id"], "filename": "kimi.png", "data_base64": data},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["asset"] == "kimi.png"
+
+
+def test_stage_endpoint_unknown_target_404(settings):
+    app, store = _make_app(settings)
+    client = TestClient(app)
+    resp = client.post(
+        "/files/stage",
+        data={"target_file_id": "ghost", "filename": "kimi.png"},
+        files={"file": ("kimi.png", b"x", "image/png")},
+    )
+    assert resp.status_code == 404
+
+
+def test_stage_endpoint_bad_extension_415(settings):
+    app, store = _make_app(settings)
+    doc = store.put("deck.pptx", b"PK\x03\x04pptx")
+    client = TestClient(app)
+    resp = client.post(
+        "/files/stage",
+        data={"target_file_id": doc["file_id"], "filename": "evil.exe"},
+        files={"file": ("evil.exe", b"nope", "application/octet-stream")},
+    )
+    assert resp.status_code == 415
+
+
+def test_stage_endpoint_too_large_413(settings):
+    app, store = _make_app(settings)
+    doc = store.put("deck.pptx", b"PK\x03\x04pptx")
+    client = TestClient(app)
+    # settings.max_upload_mb is 50 in conftest; push 51MB.
+    big = b"\x89PNG" + b"x" * (51 * 1024 * 1024)
+    resp = client.post(
+        "/files/stage",
+        data={"target_file_id": doc["file_id"], "filename": "big.png"},
+        files={"file": ("big.png", big, "image/png")},
+    )
+    assert resp.status_code == 413

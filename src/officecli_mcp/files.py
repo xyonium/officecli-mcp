@@ -178,6 +178,43 @@ async def download(request: Request) -> Response:
     )
 
 
+async def stage(request: Request) -> Response:
+    settings = request.app.state.settings
+    err = _check_api_key(request, settings.api_key)
+    if err:
+        return err
+    store: FileStore = request.app.state.file_store
+    content_type = request.headers.get("content-type", "")
+
+    try:
+        if "application/json" in content_type:
+            payload = await request.json()
+            target_file_id = payload["target_file_id"]
+            filename = payload["filename"]
+            data = base64.b64decode(payload["data_base64"])
+        else:
+            form = await request.form()
+            target_file_id = form["target_file_id"]
+            upload_file = form["file"]
+            filename = upload_file.filename or "asset.bin"
+            data = await upload_file.read()
+    except (KeyError, ValueError) as e:
+        return JSONResponse({"error": f"bad request: {e}"}, status_code=400)
+
+    if len(data) > settings.max_upload_mb * 1024 * 1024:
+        return JSONResponse({"error": "file too large"}, status_code=413)
+
+    try:
+        info = store.stage_asset(target_file_id, filename, data)
+    except KeyError:
+        return JSONResponse(
+            {"error": "target file_id not found or expired"}, status_code=404
+        )
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=415)
+    return JSONResponse(info)
+
+
 async def delete(request: Request) -> Response:
     settings = request.app.state.settings
     err = _check_api_key(request, settings.api_key)
@@ -192,6 +229,7 @@ async def delete(request: Request) -> Response:
 def build_files_router(store: FileStore, settings) -> Router:
     routes = [
         Route("/files", upload, methods=["POST"]),
+        Route("/files/stage", stage, methods=["POST"]),
         Route("/files/{file_id}", download, methods=["GET"]),
         Route("/files/{file_id}", delete, methods=["DELETE"]),
     ]
