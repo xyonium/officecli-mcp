@@ -34,16 +34,18 @@ import json
 from typing import Any
 
 import requests
+from pydantic import BaseModel
 
 
 class Tools:
-    class Valves:
-        def __init__(self, **kwargs):
-            self.officecli_mcp_url = "http://officecli-mcp:8765"
-            self.openwebui_url = "http://open-webui:8080"
-            self.openwebui_browser_url = ""  # browser-reachable OWUI base; "" -> openwebui_url
-            for k, v in kwargs.items():
-                setattr(self, k, v)
+    class Valves(BaseModel):
+        # Pydantic BaseModel (NOT a plain class) so OpenWebUI can call
+        # Valves.schema() to render the Valves editor and Valves(**form_data)
+        # to apply saved values. A plain class with __init__ has no .schema()
+        # and crashes GET /api/v1/tools/id/<id>/valves/spec with 500.
+        officecli_mcp_url: str = "http://officecli-mcp:8765"
+        openwebui_url: str = "http://open-webui:8080"
+        openwebui_browser_url: str = ""  # browser-reachable OWUI base; "" -> openwebui_url
 
     def __init__(self):
         self.valves = self.Valves()

@@ -209,3 +209,31 @@ def test_owui_headers_forwards_authorization():
     assert h["Authorization"] == "Bearer u123"
     assert h["Cookie"] == "sid=abc"
     assert tools._owui_headers(None) == {}
+
+
+def test_valves_is_pydantic_model_with_schema():
+    """OpenWebUI calls Valves.schema() to render the Valves editor and
+    Valves(**form_data) to apply saved values. A plain class with __init__
+    has no .schema() and crashes GET /api/v1/tools/id/<id>/valves/spec (500).
+    Valves MUST be a pydantic BaseModel exposing all three Valve fields.
+    """
+    mod = _load_tools()
+    Valves = mod.Tools.Valves
+
+    # .schema() is the exact (pydantic-v1-compat) method OpenWebUI's tools
+    # router calls at routers/tools.py:761. It is deprecated in pydantic v2
+    # but OpenWebUI still uses it, so we pin the real contract here.
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        schema = Valves.schema()
+    props = schema["properties"]
+    assert {"officecli_mcp_url", "openwebui_url", "openwebui_browser_url"} <= set(props)
+
+    # Valves(**form_data) applies saved values (OpenWebUI update path), and
+    # unset fields keep their defaults.
+    v = Valves(openwebui_browser_url="https://ai.savorcare.com")
+    assert v.officecli_mcp_url == "http://officecli-mcp:8765"
+    assert v.openwebui_browser_url == "https://ai.savorcare.com"
+
