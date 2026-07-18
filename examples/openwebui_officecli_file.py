@@ -81,6 +81,15 @@ class Tools:
         resp.raise_for_status()
         return resp.json()
 
+    def _mcp_stage(self, target_file_id: str, filename: str, data: bytes) -> dict:
+        """Push an asset into officecli-mcp /files/stage (stage action) -> asset name."""
+        url = f"{self.valves.officecli_mcp_url}/files/stage"
+        files = {"file": (filename, data, "application/octet-stream")}
+        data_field = {"target_file_id": target_file_id, "filename": filename}
+        resp = requests.post(url, data=data_field, files=files, timeout=120)
+        resp.raise_for_status()
+        return resp.json()
+
     def _mcp_get(self, file_id: str) -> requests.Response:
         """Pull a finished file's bytes from officecli-mcp /files/{id} (download)."""
         url = f"{self.valves.officecli_mcp_url}/files/{file_id}"
@@ -118,6 +127,7 @@ class Tools:
         __request__: Any = None,
         file_id: str = "",
         filename: str = "",
+        source_file_id: str = "",
     ) -> str:
         """Move office documents in or out of officecli-mcp by handle.
 
@@ -147,6 +157,10 @@ class Tools:
             return await self._upload(__files__, __request__)
         if action == "download":
             return await self._download(file_id, filename, __request__)
+        if action == "stage":
+            return await self._stage(
+                file_id, filename, source_file_id, __files__, __request__
+            )
         return json.dumps({"error": f"unknown action '{action}'"})
 
     async def _upload(self, __files__: list[dict[str, Any]], __request__: Any) -> str:
@@ -207,3 +221,61 @@ class Tools:
         base = self.valves.openwebui_browser_url or self.valves.openwebui_url
         url = f"{base}/api/v1/files/{owui_id}/content"
         return json.dumps({"url": url, "filename": name, "size": len(data)})
+
+    async def _fetch_bytes(
+        self,
+        source_file_id: str,
+        files: list[dict[str, Any]],
+        __request__: Any,
+    ) -> tuple[bytes, str]:
+        """Resolve asset bytes from one of two sources.
+
+        source_file_id wins (generated-image products in OpenWebUI storage);
+        else fall back to the first __files__ entry (user-attached). Returns
+        (bytes, name).
+        """
+        if source_file_id:
+            data = await anyio.to_thread.run_sync(self._owui_get, source_file_id, __request__)
+            return data, ""
+        if files:
+            f = files[0]
+            fid = f.get("id") or (f.get("file") or {}).get("id")
+            name = f.get("name") or f.get("filename") or "asset.bin"
+            if not fid:
+                raise ValueError("attached file has no id")
+            data = await anyio.to_thread.run_sync(self._owui_get, fid, __request__)
+            return data, name
+        raise ValueError("no source: pass source_file_id or attach a file")
+
+    async def _stage(
+        self,
+        file_id: str,
+        filename: str,
+        source_file_id: str,
+        files: list[dict[str, Any]],
+        __request__: Any,
+    ) -> str:
+        if not file_id:
+            return json.dumps({"error": "file_id (target document) required"})
+        try:
+            data, fallback_name = await self._fetch_bytes(source_file_id, files, __request__)
+        except Exception as e:  # noqa: BLE001
+            return json.dumps({"error": f"asset fetch failed: {e}"})
+        name = filename or fallback_name or "asset.bin"
+        try:
+            info = await anyio.to_thread.run_sync(self._mcp_stage, file_id, name, data)
+        except Exception as e:  # noqa: BLE001
+            return json.dumps({"error": f"officecli-mcp stage failed: {e}"})
+        asset = info.get("asset")
+        if not asset:
+            return json.dumps({"error": f"stage returned no asset: {info}"})
+        return json.dumps(
+            {
+                "asset": asset,
+                "target": file_id,
+                "hint": (
+                    "Pass asset as src= to officecli_add (type=picture, "
+                    'prop=["src=<asset>",...]) or as source to officecli_import.'
+                ),
+            }
+        )
