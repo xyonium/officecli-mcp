@@ -45,7 +45,13 @@ def build_mcp(
             "officecli_view_screenshot (PNG image) to see the document, edit with "
             "officecli_set/add/remove/edit, then view again to verify. "
             "Selectors are officecli DOM/CSS paths like /slide[1] or /body/p[2]; run "
-            "officecli_view_annotated or officecli_view_outline to discover them."
+            "officecli_view_annotated or officecli_view_outline to discover them. "
+            "ASSETS: to insert an image or import CSV, first call `officecli_file` "
+            "with action=\"stage\" (source_file_id= an OpenWebUI image id, or rely on "
+            "__files__) to drop the asset into the document's workdir and get an "
+            "asset filename; then call `officecli_add` with type=picture and "
+            "prop=[\"src=<asset>\",\"width=...\",\"x=...\",\"y=...\"] (or "
+            "`officecli_import` with source=<asset>)."
         ),
         # Pass the real bind host so FastMCP's auto DNS-rebinding guard only
         # fires for true localhost binds. We supply an explicit
