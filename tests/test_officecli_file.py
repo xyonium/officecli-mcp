@@ -25,7 +25,7 @@ class FakeRequest:
         self.headers = headers
 
 
-def test_download_action_pushes_to_owui_storage(monkeypatch):
+async def test_download_action_pushes_to_owui_storage(monkeypatch):
     """download: GET bytes from officecli-mcp, POST to OWUI storage, return browser URL."""
     from officecli_mcp import server as server_mod
 
@@ -104,7 +104,7 @@ def test_download_action_pushes_to_owui_storage(monkeypatch):
     )
 
     result = json.loads(
-        tools.officecli_file(
+        await tools.officecli_file(
             action="download",
             __request__=FakeRequest({"authorization": "Bearer current-user-token"}),
             file_id=file_id,
@@ -117,7 +117,7 @@ def test_download_action_pushes_to_owui_storage(monkeypatch):
     assert received_auth["process"] == "false", received_auth
 
 
-def test_upload_action_returns_file_ids(monkeypatch):
+async def test_upload_action_returns_file_ids(monkeypatch):
     """upload: fetch each attached file from OWUI, POST to officecli-mcp, return file_ids."""
     from officecli_mcp import server as server_mod
 
@@ -175,7 +175,7 @@ def test_upload_action_returns_file_ids(monkeypatch):
     )
 
     result = json.loads(
-        tools.officecli_file(
+        await tools.officecli_file(
             action="upload",
             __files__=[{"id": "f1", "name": "report.docx"}],
             __request__=FakeRequest({"authorization": "Bearer current-user-token"}),
@@ -188,17 +188,17 @@ def test_upload_action_returns_file_ids(monkeypatch):
     assert received_auth["auth"] == "Bearer current-user-token", received_auth
 
 
-def test_unknown_action_returns_error():
+async def test_unknown_action_returns_error():
     mod = _load_tools()
     tools = mod.Tools()
-    result = json.loads(tools.officecli_file(action="frobnicate"))
+    result = json.loads(await tools.officecli_file(action="frobnicate"))
     assert result == {"error": "unknown action 'frobnicate'"}
 
 
-def test_download_without_file_id_returns_error():
+async def test_download_without_file_id_returns_error():
     mod = _load_tools()
     tools = mod.Tools()
-    result = json.loads(tools.officecli_file(action="download"))
+    result = json.loads(await tools.officecli_file(action="download"))
     assert result == {"error": "file_id required"}
 
 

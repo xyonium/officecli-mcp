@@ -33,6 +33,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import anyio
 import requests
 from pydantic import BaseModel
 
@@ -110,7 +111,7 @@ class Tools:
                     return name
         return fallback or "download.docx"
 
-    def officecli_file(
+    async def officecli_file(
         self,
         action: str,
         __files__: list[dict[str, Any]] = [],  # noqa: B006
@@ -119,6 +120,14 @@ class Tools:
         filename: str = "",
     ) -> str:
         """Move office documents in or out of officecli-mcp by handle.
+
+        Must be `async` and offload every blocking `requests` call to a worker
+        thread via `anyio.to_thread.run_sync`. OpenWebUI runs sync tool methods
+        directly in its single uvicorn event loop (utils/tools.py:228), so a
+        blocking HTTP call back to OpenWebUI itself (download's storage POST)
+        would deadlock the only worker until the 120s read timeout. `async def`
+        takes the `iscoroutinefunction` branch which `await`s us, and the
+        thread offload keeps the loop free to service the self-call.
 
         Args:
             action: "upload" (push attached files in, get file_id) or
@@ -135,12 +144,12 @@ class Tools:
             download: {"url":"https://.../api/v1/files/{owui_id}/content","filename":...,"size":...}
         """
         if action == "upload":
-            return self._upload(__files__, __request__)
+            return await self._upload(__files__, __request__)
         if action == "download":
-            return self._download(file_id, filename, __request__)
+            return await self._download(file_id, filename, __request__)
         return json.dumps({"error": f"unknown action '{action}'"})
 
-    def _upload(self, __files__: list[dict[str, Any]], __request__: Any) -> str:
+    async def _upload(self, __files__: list[dict[str, Any]], __request__: Any) -> str:
         if not __files__:
             return json.dumps({"error": "no files attached"})
         out = []
@@ -152,8 +161,8 @@ class Tools:
             if not file_id:
                 continue
             try:
-                data = self._owui_get(file_id, __request__)
-                info = self._mcp_post(name, data)
+                data = await anyio.to_thread.run_sync(self._owui_get, file_id, __request__)
+                info = await anyio.to_thread.run_sync(self._mcp_post, name, data)
                 out.append({"file_id": info["file_id"], "filename": info.get("filename", name)})
             except Exception as e:  # noqa: BLE001
                 out.append({"filename": name, "error": str(e)})
@@ -164,11 +173,11 @@ class Tools:
             }
         )
 
-    def _download(self, file_id: str, filename: str, __request__: Any) -> str:
+    async def _download(self, file_id: str, filename: str, __request__: Any) -> str:
         if not file_id:
             return json.dumps({"error": "file_id required"})
         try:
-            resp = self._mcp_get(file_id)
+            resp = await anyio.to_thread.run_sync(self._mcp_get, file_id)
         except requests.HTTPError as e:
             if e.response is not None and e.response.status_code == 404:
                 return json.dumps(
@@ -188,7 +197,7 @@ class Tools:
         mime = "application/octet-stream"
 
         try:
-            info = self._owui_post(name, data, mime, __request__)
+            info = await anyio.to_thread.run_sync(self._owui_post, name, data, mime, __request__)
         except Exception as e:  # noqa: BLE001
             return json.dumps({"error": f"openwebui upload failed: {e}"})
 
