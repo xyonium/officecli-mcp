@@ -5,6 +5,7 @@ import os
 import time
 from pathlib import Path
 
+import pytest
 from starlette.testclient import TestClient
 
 
@@ -72,3 +73,72 @@ def test_ttl_sweep_removes_old(settings, tmp_path):
     os.utime(d, (old, old))
     store.sweep()
     assert not d.exists()
+
+
+def test_stage_asset_writes_into_target_workdir(settings):
+    from officecli_mcp.files import FileStore
+
+    store = FileStore(work_dir=settings.work_dir, ttl_seconds=3600)
+    # Target document must exist first.
+    doc = store.put("deck.pptx", b"PK\x03\x04pptx")
+    info = store.stage_asset(doc["file_id"], "kimi.png", b"\x89PNG\r\n\x1a\nfake")
+    assert info["asset"] == "kimi.png"
+    assert info["target"] == doc["file_id"]
+    assert Path(settings.work_dir, doc["file_id"], "kimi.png").exists()
+    # The document is untouched and still discoverable.
+    assert store.path_for(doc["file_id"]).name == "deck.pptx"
+
+
+def test_stage_asset_rejects_bad_extension(settings):
+    from officecli_mcp.files import FileStore
+
+    store = FileStore(work_dir=settings.work_dir, ttl_seconds=3600)
+    doc = store.put("deck.pptx", b"PK\x03\x04pptx")
+    with pytest.raises(ValueError):
+        store.stage_asset(doc["file_id"], "evil.exe", b"nope")
+
+
+def test_stage_asset_unknown_target_raises_keyerror(settings):
+    from officecli_mcp.files import FileStore
+
+    store = FileStore(work_dir=settings.work_dir, ttl_seconds=3600)
+    with pytest.raises(KeyError):
+        store.stage_asset("ghost", "kimi.png", b"x")
+
+
+def test_stage_asset_strips_path_traversal(settings):
+    from officecli_mcp.files import FileStore
+
+    store = FileStore(work_dir=settings.work_dir, ttl_seconds=3600)
+    doc = store.put("deck.pptx", b"PK\x03\x04pptx")
+    info = store.stage_asset(doc["file_id"], "../escape.png", b"x")
+    # _safe_filename keeps only the basename.
+    assert info["asset"] == "escape.png"
+    assert not Path(settings.work_dir, "escape.png").exists()
+
+
+def test_path_for_prefers_document_over_staged_png(settings):
+    """Regression: after staging kimi.png next to deck.pptx, path_for must
+    still return deck.pptx, not the png."""
+    from officecli_mcp.files import FileStore
+
+    store = FileStore(work_dir=settings.work_dir, ttl_seconds=3600)
+    doc = store.put("deck.pptx", b"PK\x03\x04pptx")
+    store.stage_asset(doc["file_id"], "kimi.png", b"\x89PNG")
+    # Also drop a screenshot product (legacy shot.png) to confirm it's ignored.
+    Path(settings.work_dir, doc["file_id"], "shot.png").write_bytes(b"\x89PNG")
+    assert store.path_for(doc["file_id"]).name == "deck.pptx"
+
+
+def test_path_for_with_only_non_doc_file_raises(settings):
+    """A workdir whose only file is not a document extension now KeyErrors
+    (tightened behavior)."""
+    from officecli_mcp.files import FileStore
+
+    store = FileStore(work_dir=settings.work_dir, ttl_seconds=3600)
+    # Manually create a workdir with only a png, no doc.
+    d = Path(settings.work_dir, "lonely")
+    d.mkdir(parents=True)
+    (d / "kimi.png").write_bytes(b"\x89PNG")
+    with pytest.raises(KeyError):
+        store.path_for("lonely")

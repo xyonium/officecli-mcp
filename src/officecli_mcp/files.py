@@ -15,6 +15,7 @@ from starlette.routing import Route, Router
 log = logging.getLogger(__name__)
 
 _SAFE_EXT = {"docx", "xlsx", "pptx"}
+STAGE_EXT = {"png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "csv", "tsv"}
 
 
 def _safe_filename(name: str) -> str:
@@ -47,16 +48,38 @@ class FileStore:
         (d / safe).write_bytes(data)
         return {"file_id": file_id, "filename": safe, "size": len(data), "mime": _mime(ext)}
 
+    def stage_asset(self, target_file_id: str, filename: str, data: bytes) -> dict:
+        """Write an asset (image/CSV/TSV) into an EXISTING document's workdir.
+
+        Unlike put(), this does not create a new file_id; it drops the asset
+        alongside the target document so officecli can reference it by relative
+        filename (src=kimi.png).
+        """
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        if ext not in STAGE_EXT:
+            raise ValueError(f"extension .{ext} not allowed for staging")
+        d = self._dir(target_file_id)
+        if not d.exists():
+            raise KeyError(target_file_id)
+        safe = _safe_filename(filename)
+        (d / safe).write_bytes(data)
+        return {"asset": safe, "target": target_file_id}
+
     def path_for(self, file_id: str, filename: str | None = None) -> Path:
         d = self._dir(file_id)
         if not d.exists():
             raise KeyError(file_id)
         if filename:
             return d / _safe_filename(filename)
-        files = [p for p in d.iterdir() if p.is_file() and p.name != "shot.png"]
-        if not files:
+        # Return only document-extension files; staged assets (png/csv/...) and
+        # the screenshot product (shot.png) are never the document itself.
+        docs = [
+            p for p in d.iterdir()
+            if p.is_file() and p.suffix.lower().lstrip(".") in _SAFE_EXT
+        ]
+        if not docs:
             raise KeyError(file_id)
-        return files[0]
+        return docs[0]
 
     def read(self, file_id: str) -> tuple[bytes, str]:
         p = self.path_for(file_id)
