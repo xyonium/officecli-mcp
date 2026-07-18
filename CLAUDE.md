@@ -25,7 +25,7 @@ src/officecli_mcp/
   config.py            # env-based settings (ports, workdir, ttl, api key, officecli version pin)
   models.py            # pydantic models for file_id, tool params, responses
 examples/
-  openwebui_officecli_upload.py   # the native OpenWebUI tool shim (the upload half of the bridge)
+  openwebui_officecli_file.py     # the merged OpenWebUI native tool shim (upload + download)
 tests/
 docs/superpowers/specs/
 Dockerfile
