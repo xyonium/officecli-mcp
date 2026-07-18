@@ -26,7 +26,7 @@ dev = [
     "trio>=0.25",
     "ruff>=0.6",
     "build>=1.2",
-    # The OpenWebUI upload shim (examples/) uses requests; needed to import it in tests.
+    # The officecli_file OpenWebUI tool (examples/) uses requests; needed to import it in tests.
     "requests>=2.31",
 ]
 
@@ -46,7 +46,7 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
-# The upload shim is pasted into OpenWebUI and uses broad except on purpose.
+# The officecli_file tool (examples/) is pasted into OpenWebUI and uses broad except on purpose.
 ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
