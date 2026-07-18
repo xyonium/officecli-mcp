@@ -6,6 +6,12 @@ import pytest
 from mcp.shared.memory import create_connected_server_and_client_session
 
 
+def _write_stub_argv(path: Path, rec: Path) -> None:
+    """Write a shell stub that records its argv to a file, then prints OK."""
+    path.write_text(f"#!/bin/sh\nprintf '%s\\n' \"$@\" > {rec}\necho OK\n")
+    path.chmod(0o755)
+
+
 def _write_stub(path: Path, script: str) -> None:
     path.write_text(script)
     path.chmod(0o755)
@@ -90,3 +96,64 @@ async def test_unknown_file_id_is_error(mcp_server):
         assert res.isError
         texts = [c.text for c in res.content if hasattr(c, "text")]
         assert any("not found" in t.lower() for t in texts)
+
+
+async def test_add_multi_prop_emits_multiple_dash_prop(mcp_server, tmp_path):
+    mcp, store = mcp_server
+    info = store.put("r.pptx", b"pptx-bytes")
+    rec = tmp_path / "argv.txt"
+    _write_stub_argv(Path(mcp._runner.binary_path), rec)
+
+    async with create_connected_server_and_client_session(mcp) as session:
+        await session.initialize()
+        res = await session.call_tool(
+            "officecli_add",
+            {
+                "file_id": info["file_id"],
+                "selector": "/slide[1]",
+                "type": "picture",
+                "prop": ["src=kimi.png", "width=5in", "x=1cm", "y=1cm"],
+            },
+        )
+        assert not res.isError, res.content
+    argv = rec.read_text().splitlines()
+    prop_indices = [i for i, a in enumerate(argv) if a == "--prop"]
+    assert len(prop_indices) == 4
+    assert argv[prop_indices[0] + 1] == "src=kimi.png"
+    assert argv[prop_indices[1] + 1] == "width=5in"
+
+
+async def test_add_no_prop_omits_flag(mcp_server, tmp_path):
+    mcp, store = mcp_server
+    info = store.put("r.pptx", b"pptx-bytes")
+    rec = tmp_path / "argv.txt"
+    _write_stub_argv(Path(mcp._runner.binary_path), rec)
+
+    async with create_connected_server_and_client_session(mcp) as session:
+        await session.initialize()
+        await session.call_tool(
+            "officecli_add",
+            {"file_id": info["file_id"], "selector": "/", "type": "slide"},
+        )
+    argv = rec.read_text().splitlines()
+    assert "--prop" not in argv
+
+
+async def test_set_multi_prop(mcp_server, tmp_path):
+    mcp, store = mcp_server
+    info = store.put("r.docx", b"docx-bytes")
+    rec = tmp_path / "argv.txt"
+    _write_stub_argv(Path(mcp._runner.binary_path), rec)
+
+    async with create_connected_server_and_client_session(mcp) as session:
+        await session.initialize()
+        await session.call_tool(
+            "officecli_set",
+            {
+                "file_id": info["file_id"],
+                "selector": "/body/p[1]",
+                "prop": ["bold=true", "size=14"],
+            },
+        )
+    argv = rec.read_text().splitlines()
+    assert argv.count("--prop") == 2
