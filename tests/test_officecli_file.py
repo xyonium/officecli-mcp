@@ -211,6 +211,163 @@ def test_owui_headers_forwards_authorization():
     assert tools._owui_headers(None) == {}
 
 
+async def test_stage_action_from_source_file_id(monkeypatch):
+    """stage(source_file_id): fetch OWUI image bytes, POST to /files/stage, return asset."""
+    from officecli_mcp import server as server_mod
+
+    stub = Path("/tmp/_officecli_stub_for_file_test")
+    stub.write_text("#!/bin/sh\necho ok\n")
+    stub.chmod(0o755)
+    monkeypatch.setattr(server_mod.binary, "ensure_binary", lambda *a, **k: str(stub))
+    settings = type(
+        "S", (), {
+            "transport": "http", "host": "127.0.0.1", "port": 8765,
+            "data_dir": "/tmp/_fdata", "work_dir": "/tmp/_fwork",
+            "work_ttl_seconds": 3600, "max_upload_mb": 50,
+            "officecli_version": "latest", "officecli_sha256": "",
+            "api_key": "", "allowed_extensions": ("docx", "xlsx", "pptx"),
+            "dns_rebinding_protection": False,
+            "allowed_hosts": ("127.0.0.1:*", "localhost:*"),
+            "binary_path": "/tmp/_officecli_stub_for_file_test",
+        })()
+    shutil.rmtree("/tmp/_fwork", ignore_errors=True)
+    shutil.rmtree("/tmp/_fdata", ignore_errors=True)
+    mcp_app = server_mod.build_app(settings)
+    mcp_client = TestClient(mcp_app)
+
+    # Seed a target pptx in officecli-mcp.
+    target = mcp_client.post(
+        "/files", files={"file": ("deck.pptx", b"PK\x03\x04pptx", "application/octet-stream")}
+    ).json()["file_id"]
+
+    image_bytes = b"\x89PNG\r\n\x1a\ngenerated-image"
+    received_auth = {}
+
+    async def fake_content(request):
+        received_auth["auth"] = request.headers.get("authorization")
+        return Response(image_bytes, media_type="image/png")
+
+    owui = Starlette(routes=[Route("/api/v1/files/{file_id}/content", fake_content)])
+    owui_client = TestClient(owui)
+
+    mod = _load_tools()
+    tools = mod.Tools()
+    tools.valves = mod.Tools.Valves(
+        officecli_mcp_url="http://mcp", openwebui_url="http://owui"
+    )
+    monkeypatch.setattr(
+        tools, "_owui_get",
+        lambda fid, __request__: owui_client.get(
+            f"/api/v1/files/{fid}/content", headers=tools._owui_headers(__request__)
+        ).content,
+    )
+    monkeypatch.setattr(
+        tools, "_mcp_stage",
+        lambda target_fid, fname, data: mcp_client.post(
+            "/files/stage",
+            data={"target_file_id": target_fid, "filename": fname},
+            files={"file": (fname, data, "image/png")},
+        ).json(),
+    )
+
+    result = json.loads(
+        await tools.officecli_file(
+            action="stage",
+            file_id=target,
+            source_file_id="owui-img-1",
+            filename="kimi.png",
+            __request__=FakeRequest({"authorization": "Bearer current-user-token"}),
+        )
+    )
+    assert result["asset"] == "kimi.png", result
+    assert result["target"] == target, result
+    assert "officecli_add" in result["hint"]
+    assert received_auth["auth"] == "Bearer current-user-token", received_auth
+    # Asset actually landed in the target workdir.
+    from pathlib import Path as P
+    assert P("/tmp/_fwork", target, "kimi.png").exists()
+
+
+async def test_stage_action_from_files(monkeypatch):
+    """stage(__files__): take first attached file, POST to /files/stage."""
+    from officecli_mcp import server as server_mod
+
+    stub = Path("/tmp/_officecli_stub_for_file_test2")
+    stub.write_text("#!/bin/sh\necho ok\n")
+    stub.chmod(0o755)
+    monkeypatch.setattr(server_mod.binary, "ensure_binary", lambda *a, **k: str(stub))
+    settings = type(
+        "S", (), {
+            "transport": "http", "host": "127.0.0.1", "port": 8765,
+            "data_dir": "/tmp/_fdata2", "work_dir": "/tmp/_fwork2",
+            "work_ttl_seconds": 3600, "max_upload_mb": 50,
+            "officecli_version": "latest", "officecli_sha256": "",
+            "api_key": "", "allowed_extensions": ("docx", "xlsx", "pptx"),
+            "dns_rebinding_protection": False,
+            "allowed_hosts": ("127.0.0.1:*", "localhost:*"),
+            "binary_path": "/tmp/_officecli_stub_for_file_test2",
+        })()
+    shutil.rmtree("/tmp/_fwork2", ignore_errors=True)
+    shutil.rmtree("/tmp/_fdata2", ignore_errors=True)
+    mcp_app = server_mod.build_app(settings)
+    mcp_client = TestClient(mcp_app)
+
+    target = mcp_client.post(
+        "/files", files={"file": ("deck.pptx", b"PK\x03\x04pptx", "application/octet-stream")}
+    ).json()["file_id"]
+
+    csv_bytes = b"a,b\n1,2\n"
+    received = {}
+
+    async def fake_content(request):
+        received["fetched"] = True
+        return Response(csv_bytes, media_type="text/csv")
+
+    owui = Starlette(routes=[Route("/api/v1/files/{file_id}/content", fake_content)])
+    owui_client = TestClient(owui)
+
+    mod = _load_tools()
+    tools = mod.Tools()
+    tools.valves = mod.Tools.Valves(
+        officecli_mcp_url="http://mcp", openwebui_url="http://owui"
+    )
+    monkeypatch.setattr(
+        tools, "_owui_get",
+        lambda fid, __request__: owui_client.get(
+            f"/api/v1/files/{fid}/content", headers=tools._owui_headers(__request__)
+        ).content,
+    )
+    monkeypatch.setattr(
+        tools, "_mcp_stage",
+        lambda target_fid, fname, data: mcp_client.post(
+            "/files/stage",
+            data={"target_file_id": target_fid, "filename": fname},
+            files={"file": (fname, data, "text/csv")},
+        ).json(),
+    )
+
+    result = json.loads(
+        await tools.officecli_file(
+            action="stage",
+            file_id=target,
+            __files__=[{"id": "csv-1", "name": "kpi.csv"}],
+            filename="kpi.csv",
+            __request__=FakeRequest({"authorization": "Bearer current-user-token"}),
+        )
+    )
+    assert result["asset"] == "kpi.csv", result
+    assert result["target"] == target, result
+    assert "officecli_import" in result["hint"]
+    assert received.get("fetched")
+
+
+async def test_stage_without_target_file_id_returns_error():
+    mod = _load_tools()
+    tools = mod.Tools()
+    result = json.loads(await tools.officecli_file(action="stage"))
+    assert result == {"error": "file_id (target document) required"}
+
+
 def test_valves_is_pydantic_model_with_schema():
     """OpenWebUI calls Valves.schema() to render the Valves editor and
     Valves(**form_data) to apply saved values. A plain class with __init__
