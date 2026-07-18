@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shutil
 from pathlib import Path
 
 from starlette.applications import Starlette
@@ -54,8 +55,6 @@ def test_download_action_pushes_to_owui_storage(monkeypatch):
             "binary_path": "/tmp/_officecli_stub_for_file_test",
         },
     )()
-    import shutil
-
     shutil.rmtree("/tmp/_fwork", ignore_errors=True)
     shutil.rmtree("/tmp/_fdata", ignore_errors=True)
     mcp_app = server_mod.build_app(settings)
@@ -116,3 +115,97 @@ def test_download_action_pushes_to_owui_storage(monkeypatch):
     assert result["size"] == len(file_bytes), result
     assert received_auth["auth"] == "Bearer current-user-token", received_auth
     assert received_auth["process"] == "false", received_auth
+
+
+def test_upload_action_returns_file_ids(monkeypatch):
+    """upload: fetch each attached file from OWUI, POST to officecli-mcp, return file_ids."""
+    from officecli_mcp import server as server_mod
+
+    stub = Path("/tmp/_officecli_stub_for_file_test")
+    stub.write_text("#!/bin/sh\necho ok\n")
+    stub.chmod(0o755)
+    monkeypatch.setattr(server_mod.binary, "ensure_binary", lambda *a, **k: str(stub))
+    settings = type(
+        "S",
+        (),
+        {
+            "transport": "http", "host": "127.0.0.1", "port": 8765,
+            "data_dir": "/tmp/_fdata", "work_dir": "/tmp/_fwork",
+            "work_ttl_seconds": 3600, "max_upload_mb": 50,
+            "officecli_version": "latest", "officecli_sha256": "",
+            "api_key": "", "allowed_extensions": ("docx", "xlsx", "pptx"),
+            "dns_rebinding_protection": False,
+            "allowed_hosts": ("127.0.0.1:*", "localhost:*"),
+            "binary_path": "/tmp/_officecli_stub_for_file_test",
+        },
+    )()
+    shutil.rmtree("/tmp/_fwork", ignore_errors=True)
+    shutil.rmtree("/tmp/_fdata", ignore_errors=True)
+    mcp_app = server_mod.build_app(settings)
+    mcp_client = TestClient(mcp_app)
+
+    file_bytes = b"PK\x03\x04real-docx"
+    received_auth = {}
+
+    async def fake_content(request):
+        received_auth["auth"] = request.headers.get("authorization")
+        return Response(file_bytes, media_type="application/octet-stream")
+
+    owui = Starlette(routes=[Route("/api/v1/files/{file_id}/content", fake_content)])
+    owui_client = TestClient(owui)
+
+    mod = _load_tools()
+    tools = mod.Tools()
+    tools.valves = mod.Tools.Valves(
+        officecli_mcp_url="http://mcp", openwebui_url="http://owui"
+    )
+    monkeypatch.setattr(
+        tools,
+        "_owui_get",
+        lambda fid, __request__: owui_client.get(
+            f"/api/v1/files/{fid}/content", headers=tools._owui_headers(__request__)
+        ).content,
+    )
+    monkeypatch.setattr(
+        tools,
+        "_mcp_post",
+        lambda fname, data: mcp_client.post(
+            "/files", files={"file": (fname, data, "application/octet-stream")}
+        ).json(),
+    )
+
+    result = json.loads(
+        tools.officecli_file(
+            action="upload",
+            __files__=[{"id": "f1", "name": "report.docx"}],
+            __request__=FakeRequest({"authorization": "Bearer current-user-token"}),
+        )
+    )
+    assert result["files"], result
+    assert result["files"][0]["file_id"]
+    assert result["files"][0]["filename"] == "report.docx"
+    assert "officecli_" in result["hint"]
+    assert received_auth["auth"] == "Bearer current-user-token", received_auth
+
+
+def test_unknown_action_returns_error():
+    mod = _load_tools()
+    tools = mod.Tools()
+    result = json.loads(tools.officecli_file(action="frobnicate"))
+    assert result == {"error": "unknown action 'frobnicate'"}
+
+
+def test_download_without_file_id_returns_error():
+    mod = _load_tools()
+    tools = mod.Tools()
+    result = json.loads(tools.officecli_file(action="download"))
+    assert result == {"error": "file_id required"}
+
+
+def test_owui_headers_forwards_authorization():
+    mod = _load_tools()
+    tools = mod.Tools()
+    h = tools._owui_headers(FakeRequest({"authorization": "Bearer u123", "cookie": "sid=abc"}))
+    assert h["Authorization"] == "Bearer u123"
+    assert h["Cookie"] == "sid=abc"
+    assert tools._owui_headers(None) == {}
