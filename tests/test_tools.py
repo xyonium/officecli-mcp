@@ -45,7 +45,7 @@ async def test_server_instructions_teach_upload_workflow(mcp_server):
     # instructions surface in the InitializeResult; fall back to the FastMCP attr.
     text = (getattr(result, "instructions", None) or "").lower()
     assert "file_id" in text
-    assert "officecli_upload" in text or "upload" in text
+    assert "officecli_file" in text
 
 
 async def test_view_html_returns_text(mcp_server):
