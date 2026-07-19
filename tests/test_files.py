@@ -62,6 +62,30 @@ def test_download_unknown_returns_404(settings):
     assert client.get("/files/does-not-exist").status_code == 404
 
 
+def test_download_non_ascii_filename_does_not_500(settings):
+    """Regression: a document whose filename contains non-ASCII chars (e.g.
+    Chinese) crashed GET /files/{id} with a 500 UnicodeEncodeError. Starlette
+    encodes header values as latin-1; a raw UTF-8 filename in
+    Content-Disposition breaks it. Must use RFC 6266 filename*=UTF-8''<pct>
+    for non-ASCII names. (Reproduced live: cross-session download of a
+    Chinese-named pptx returned 500 while view_stats on the same file_id
+    worked - only the HTTP download endpoint crashed.)"""
+    app, store = _make_app(settings)
+    client = TestClient(app)
+    resp = client.post(
+        "/files",
+        files={"file": ("季报.docx", b"PK\x03\x04docx", "application/octet-stream")},
+    )
+    assert resp.status_code == 200, resp.text
+    file_id = resp.json()["file_id"]
+    dl = client.get(f"/files/{file_id}")
+    assert dl.status_code == 200, dl.status_code
+    assert dl.content == b"PK\x03\x04docx"
+    # Content-Disposition must carry the non-ASCII name safely (RFC 6266).
+    cd = dl.headers.get("content-disposition", "")
+    assert "季报" in cd or "%E5%AD%A3%E6%8A%A5" in cd, cd
+
+
 def test_ttl_sweep_removes_old(settings, tmp_path):
     app, store = _make_app(settings)
     client = TestClient(app)
