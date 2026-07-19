@@ -48,8 +48,13 @@ def test_create_view_html_screenshot_delete_flow(app):
                 "officecli_create", {"file_id": seed_id, "name": "deck.pptx", "type": "pptx"}
             )
             texts = [c.text for c in r.content if hasattr(c, "text")]
-            new_id = texts[0].strip()
+            create_out = "\n".join(texts)
+            new_id = create_out.splitlines()[0].strip()
             assert not new_id.startswith("ERROR"), texts
+            # The real binary prints slide dimensions on create; the tool must
+            # surface them so the model can size objects to the page.
+            assert "slideWidth" in create_out, create_out
+            assert "slideHeight" in create_out, create_out
 
             # Add a slide so screenshot has a page to render (blank deck has 0 slides).
             await session.call_tool(
@@ -100,8 +105,11 @@ def test_stage_image_into_pptx(app, tmp_path):
             r = await session.call_tool(
                 "officecli_create", {"file_id": seed_id, "name": "deck.pptx", "type": "pptx"}
             )
-            new_id = [c.text for c in r.content if hasattr(c, "text")][0].strip()
+            create_out = "\n".join(c.text for c in r.content if hasattr(c, "text"))
+            new_id = create_out.splitlines()[0].strip()
             assert not new_id.startswith("ERROR"), new_id
+            # create surfaces slide dimensions now.
+            assert "slideWidth" in create_out, create_out
 
             await session.call_tool(
                 "officecli_add", {"file_id": new_id, "selector": "/", "type": "slide"}

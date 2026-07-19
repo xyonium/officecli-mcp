@@ -58,7 +58,17 @@ def build_mcp(
             "`officecli_import` with source=<asset>). "
             "NEVER pass a URL (http://...) or an OpenWebUI /api/v1/files/ path as "
             "src= - officecli's SSRF guard blocks internal addresses and the call "
-            "will fail. src= MUST be a staged asset filename."
+            "will fail. src= MUST be a staged asset filename. "
+            "SIZING: officecli_create returns the page dimensions in its output "
+            "(pptx 16:9 = slideWidth 960pt / slideHeight 540pt = 33.87cm x 19.05cm). "
+            "Size objects from THESE dimensions, not guesses: a full-bleed "
+            "background picture or textbox is x=0 y=0 width=33.87cm height=19.05cm. "
+            "PICTURES STRETCH: officecli add picture sets the box to exactly the "
+            "width/height you give - it does NOT crop or preserve aspect ratio. A "
+            "1:1 image forced into 33.87cm x 19.05cm will be squashed. So generate "
+            "(or pick) images in the TARGET aspect ratio (16:9 for a full-bleed "
+            "slide background) before staging, or set width/height to match the "
+            "image's own ratio."
         ),
         # Pass the real bind host so FastMCP's auto DNS-rebinding guard only
         # fires for true localhost binds. We supply an explicit
@@ -223,8 +233,11 @@ def build_mcp(
     def officecli_create(file_id: str, name: str, type: str) -> str:
         """Create a blank document. name e.g. 'deck.pptx'; type in docx|xlsx|pptx.
 
-        Returns a NEW file_id for the created document (the input file_id is
-        only used to host the new file's workdir).
+        Returns the new file_id on its FIRST line, followed by the officecli
+        create output. For pptx that output includes slideWidth/slideHeight
+        (e.g. 960pt x 540pt = 33.87cm x 19.05cm, 16:9) - USE these to size
+        objects: a full-bleed background is x=0 y=0 width=33.87cm height=19.05cm.
+        The file_id to pass to other tools is the FIRST line of the return.
         """
         new_id = uuid.uuid4().hex
         new_dir = os.path.join(file_store.work_dir, new_id)
@@ -233,6 +246,12 @@ def build_mcp(
         res = runner._raw_run(argv, cwd=new_dir)
         if res.exit_code != 0:
             return _err(f"create failed: {res.stderr.strip()}")
+        # Surface the create stdout so the model learns the page dimensions
+        # (slideWidth/slideHeight for pptx). Without it the model only sees a
+        # bare file_id and guesses object sizes, leaving them in the top-left.
+        out = res.stdout.strip()
+        if out:
+            return f"{new_id}\n{out}"
         return new_id
 
     return mcp
