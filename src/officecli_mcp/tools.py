@@ -51,7 +51,10 @@ def build_mcp(
             "__files__) to drop the asset into the document's workdir and get an "
             "asset filename; then call `officecli_add` with type=picture and "
             "prop=[\"src=<asset>\",\"width=...\",\"x=...\",\"y=...\"] (or "
-            "`officecli_import` with source=<asset>)."
+            "`officecli_import` with source=<asset>). "
+            "NEVER pass a URL (http://...) or an OpenWebUI /api/v1/files/ path as "
+            "src= - officecli's SSRF guard blocks internal addresses and the call "
+            "will fail. src= MUST be a staged asset filename."
         ),
         # Pass the real bind host so FastMCP's auto DNS-rebinding guard only
         # fires for true localhost binds. We supply an explicit
@@ -147,7 +150,12 @@ def build_mcp(
         """Add an element. selector=/ for top-level (e.g. add a slide with type=slide).
 
         prop is a list of 'key=value' (e.g. ["src=kimi.png","width=5in"] for a picture).
+        For a picture, src= MUST be a staged asset filename - never a URL or an
+        OpenWebUI /api/v1/files/ path (officecli's SSRF guard blocks internal
+        addresses). Call officecli_file(action="stage") first to drop the asset
+        into the document's workdir and get the filename.
         """
+        _reject_url_src(prop)
         argv = ["add", "{path}", selector, "--type", type]
         if prop:
             for p in prop:
@@ -225,6 +233,36 @@ def _run(runner: OfficeRunner, file_id: str, argv: list[str]):
         return runner.run(file_id, argv)
     except FileIDNotFound as e:
         raise ToolError(f"file_id '{file_id}' not found or expired") from e
+
+
+def _reject_url_src(prop: list[str] | None) -> None:
+    """Block src= values that are URLs or OpenWebUI API paths.
+
+    officecli's add picture accepts a URL for src=, but its SSRF guard refuses
+    internal/docker addresses - so a model passing an OpenWebUI file URL hits a
+    confusing 'Refusing to fetch image from non-public address' error. The
+    sanctioned path is to stage the asset first (officecli_file action="stage")
+    and pass the returned filename. Fail fast with that guidance instead.
+    """
+    if not prop:
+        return
+    for p in prop:
+        if "=" not in p:
+            continue
+        key, val = p.split("=", 1)
+        if key.strip() != "src":
+            continue
+        v = val.strip()
+        if v.startswith(("http://", "https://")) or v.startswith("/api/v1/files/"):
+            raise ToolError(
+                "src= must be a staged asset filename, not a URL or OpenWebUI "
+                "path (officecli's SSRF guard blocks internal addresses). Call "
+                "officecli_file(action=\"stage\", file_id=<this doc>, "
+                "source_file_id=<the OpenWebUI image id>) first to drop the "
+                "image into the document's workdir, then pass the returned "
+                "asset filename as src=."
+            )
+
 
 
 def _run_text(runner: OfficeRunner, file_id: str, argv: list[str]) -> str:
