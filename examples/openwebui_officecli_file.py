@@ -127,6 +127,47 @@ class Tools:
                     return name
         return fallback or "download.docx"
 
+    @staticmethod
+    def _infer_asset_name(filename: str, data: bytes) -> str:
+        """Pick a stgable asset filename, inferring the extension from image
+        magic bytes when the caller gave no usable filename.
+
+        The STAGE_EXT whitelist rejects unknown extensions (e.g. a bare
+        'asset.bin'), so when the model omits filename (common for generated
+        images, which only have an OpenWebUI file id) we MUST derive a real
+        extension from the bytes themselves. PNG/JPEG/GIF/WebP are detected by
+        magic bytes; SVG by leading text. Returns a basename like 'asset.png'.
+        """
+        if filename and "." in filename:
+            ext = filename.rsplit(".", 1)[-1].lower()
+            if ext in {"png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "csv", "tsv"}:
+                return filename
+        ext = Tools._infer_ext(data)
+        if not ext:
+            raise ValueError(
+                "could not infer asset extension from bytes and no filename given; "
+                "pass filename= with a stgable extension (png/jpg/gif/webp/bmp/svg/csv/tsv)"
+            )
+        return f"asset.{ext}"
+
+    @staticmethod
+    def _infer_ext(data: bytes) -> str:
+        """Sniff the image/asset extension from magic bytes, or '' if unknown."""
+        if data.startswith(b"\x89PNG\r\n\x1a\n"):
+            return "png"
+        if data.startswith(b"\xff\xd8\xff"):
+            return "jpg"
+        if data.startswith(b"GIF87a") or data.startswith(b"GIF89a"):
+            return "gif"
+        if data.startswith(b"RIFF") and len(data) > 11 and data[8:12] == b"WEBP":
+            return "webp"
+        if data.startswith(b"BM"):
+            return "bmp"
+        stripped = data.lstrip()
+        if stripped.startswith(b"<svg") or b"<svg" in data[:512]:
+            return "svg"
+        return ""
+
     async def officecli_file(
         self,
         action: str,
@@ -263,7 +304,10 @@ class Tools:
             data, fallback_name = await self._fetch_bytes(source_file_id, files, __request__)
         except Exception as e:  # noqa: BLE001
             return json.dumps({"error": f"asset fetch failed: {e}"})
-        name = filename or fallback_name or "asset.bin"
+        try:
+            name = Tools._infer_asset_name(filename or fallback_name, data)
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
         try:
             info = await anyio.to_thread.run_sync(self._mcp_stage, file_id, name, data)
         except Exception as e:  # noqa: BLE001
