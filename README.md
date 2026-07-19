@@ -85,6 +85,8 @@ All MCP tools are prefixed `officecli_` and take a `file_id` handle (returned by
 | `OFFICECLI_MCP_DATA_DIR` | /data | where the officecli binary lives |
 | `OFFICECLI_MCP_WORK_DIR` | /work | per-file_id workdirs |
 | `OFFICECLI_MCP_WORK_TTL_SECONDS` | 172800 (48h) | idle workdir cleanup (doc + staged assets); swept lazily on each upload/stage, mtime refreshed on read |
+| `OFFICECLI_MCP_VIEW_HTML_MODE` | 2 (compact) | `officecli_view_html` output: `0`=disabled (error, use screenshot/annotated), `1`=full HTML, `2`=compact (strip styles/scripts, base64 images -> `[IMG]`, keep text structure), `3`=truncate to `VIEW_HTML_MAX_CHARS`. Compact is the default because officecli's full HTML is a large interactive page that blows the model context |
+| `OFFICECLI_MCP_VIEW_HTML_MAX_CHARS` | 8000 | truncation limit when `VIEW_HTML_MODE=3` |
 | `OFFICECLI_MCP_MAX_UPLOAD_MB` | 50 | upload size cap |
 | `OFFICECLI_VERSION` | latest | pin a release tag |
 | `OFFICECLI_SHA256` | (none) | verify binary integrity |

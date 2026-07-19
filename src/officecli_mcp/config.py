@@ -51,6 +51,13 @@ class Settings:
     officecli_sha256: str = os.environ.get("OFFICECLI_SHA256", "")
     api_key: str = os.environ.get("OFFICECLI_MCP_API_KEY", "")
     allowed_extensions: tuple[str, ...] = ("docx", "xlsx", "pptx")
+    # officecli_view_html output mode. officecli's HTML is a full interactive
+    # page (CSS/JS/base64 images) that can blow the model context on complex
+    # docs. 0=disabled (error, use screenshot/annotated), 1=full HTML,
+    # 2=compact (strip style/script/sidebar, base64 img -> [IMG], keep text
+    # structure), 3=truncate to view_html_max_chars. Default 2 (compact).
+    view_html_mode: int = _env_int("OFFICECLI_MCP_VIEW_HTML_MODE", 2)
+    view_html_max_chars: int = _env_int("OFFICECLI_MCP_VIEW_HTML_MAX_CHARS", 8000)
     # MCP streamable-HTTP DNS-rebinding / Host-header guard (mcp sdk transport_security).
     dns_rebinding_protection: bool = _env_bool("OFFICECLI_MCP_DNS_REBINDING_PROTECTION", True)
     allowed_hosts: tuple[str, ...] = field(default_factory=_parse_allowed_hosts)

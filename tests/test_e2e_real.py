@@ -62,10 +62,11 @@ def test_create_view_html_screenshot_delete_flow(app):
                 "officecli_add", {"file_id": new_id, "selector": "/", "type": "slide"}
             )
 
-            # 2. view_html -> HTML text
+            # 2. view_html -> text (default compact mode strips tags but keeps
+            # visible text like slide titles; just confirm it returned content).
             r2 = await session.call_tool("officecli_view_html", {"file_id": new_id})
             t2 = "".join(c.text for c in r2.content if hasattr(c, "text"))
-            assert "<html" in t2.lower() or "<body" in t2.lower(), t2[:200]
+            assert t2.strip(), t2[:200]
 
             # 3. view_screenshot -> base64 PNG image block
             r3 = await session.call_tool(
