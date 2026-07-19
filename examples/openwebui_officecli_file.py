@@ -173,6 +173,7 @@ class Tools:
         action: str,
         __files__: list[dict[str, Any]] = [],  # noqa: B006
         __request__: Any = None,
+        __event_emitter__: Any = None,
         file_id: str = "",
         filename: str = "",
         source_file_id: str = "",
@@ -193,6 +194,12 @@ class Tools:
             __files__: upload only - OpenWebUI-injected attached-file dicts (have 'id','name').
             __request__: OpenWebUI-injected FastAPI Request; its Authorization/cookie
                 are forwarded so we act as the current user (no stored key).
+            __event_emitter__: download only - OpenWebUI-injected emitter. When
+                present, download emits a {type:"files"} event so OpenWebUI
+                renders a downloadable FileItem chip on the assistant message
+                (the user no longer has to copy a URL out of the tool call).
+                The chip url is the bare file base (no /content); FileItem
+                appends /content itself.
             file_id: download only - the officecli-mcp file_id to fetch.
             filename: download only, optional - override the saved filename.
 
@@ -200,11 +207,15 @@ class Tools:
             JSON string.
             upload:  {"files":[{"file_id":...,"filename":...}], "hint":"..."}
             download: {"url":"https://.../api/v1/files/{owui_id}/content","filename":...,"size":...}
+                (the returned url keeps /content for the model's text link; the
+                chip emitted via __event_emitter__ uses the bare base)
         """
         if action == "upload":
             return await self._upload(__files__, __request__)
         if action == "download":
-            return await self._download(file_id, filename, __request__)
+            return await self._download(
+                file_id, filename, __request__, __event_emitter__
+            )
         if action == "stage":
             return await self._stage(
                 file_id, filename, source_file_id, __files__, __request__
@@ -232,7 +243,13 @@ class Tools:
             }
         )
 
-    async def _download(self, file_id: str, filename: str, __request__: Any) -> str:
+    async def _download(
+        self,
+        file_id: str,
+        filename: str,
+        __request__: Any,
+        __event_emitter__: Any = None,
+    ) -> str:
         if not file_id:
             return json.dumps({"error": "file_id required"})
         try:
@@ -264,8 +281,37 @@ class Tools:
         if not owui_id:
             return json.dumps({"error": f"openwebui upload returned no id: {info}"})
         base = self.valves.openwebui_browser_url or self.valves.openwebui_url
-        url = f"{base}/api/v1/files/{owui_id}/content"
-        return json.dumps({"url": url, "filename": name, "size": len(data)})
+        # The FileItem chip component appends '/content' itself
+        # (FileItem.svelte: window.open(`${url}/content`)), so the chip url is
+        # the bare file base. The JSON url keeps '/content' for the model to
+        # print as a text link. Emitting .../content would open
+        # .../content/content -> 404.
+        chip_url = f"{base}/api/v1/files/{owui_id}"
+        content_url = f"{chip_url}/content"
+
+        if __event_emitter__ is not None:
+            try:
+                await __event_emitter__(
+                    {
+                        "type": "files",
+                        "data": {
+                            "files": [
+                                {
+                                    "type": "file",
+                                    "url": chip_url,
+                                    "name": name,
+                                    "size": len(data),
+                                }
+                            ]
+                        },
+                    }
+                )
+            except Exception:  # noqa: BLE001
+                # A failed chip event must not break the download result the
+                # model depends on; the JSON url is still returned below.
+                pass
+
+        return json.dumps({"url": content_url, "filename": name, "size": len(data)})
 
     async def _fetch_bytes(
         self,
