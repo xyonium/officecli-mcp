@@ -167,6 +167,26 @@ async def upload(request: Request) -> Response:
     return JSONResponse(info)
 
 
+def _content_disposition(name: str) -> str:
+    """RFC 6266 Content-Disposition for a download filename.
+
+    Starlette encodes header values as latin-1, so a raw UTF-8 name (e.g.
+    Chinese) crashes the response with UnicodeEncodeError -> 500. For non-ASCII
+    names use the filename*=UTF-8''<percent-encoded> form (with an ASCII
+    filename= fallback). ASCII names use the plain filename= form.
+    """
+    try:
+        name.encode("latin-1")
+        return f'attachment; filename="{name}"'
+    except UnicodeEncodeError:
+        from urllib.parse import quote
+
+        pct = quote(name, safe="")
+        # ASCII fallback: strip non-ASCII so legacy clients still get a name.
+        ascii_fallback = name.encode("ascii", "ignore").decode("ascii") or "download"
+        return f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{pct}"
+
+
 async def download(request: Request) -> Response:
     settings = request.app.state.settings
     err = _check_api_key(request, settings.api_key)
@@ -181,7 +201,7 @@ async def download(request: Request) -> Response:
     return Response(
         data,
         media_type="application/octet-stream",
-        headers={"content-disposition": f'attachment; filename="{name}"'},
+        headers={"content-disposition": _content_disposition(name)},
     )
 
 
