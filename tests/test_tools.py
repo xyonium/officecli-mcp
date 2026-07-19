@@ -159,6 +159,86 @@ async def test_set_multi_prop(mcp_server, tmp_path):
     assert argv.count("--prop") == 2
 
 
+async def test_add_rejects_url_src_with_stage_guidance(mcp_server, tmp_path):
+    """officecli_add must refuse src= URLs/paths and point the model at stage,
+    instead of letting officecli fail with a confusing SSRF error.
+
+    The model repeatedly tries to pass an OpenWebUI file URL directly as src=,
+    which officecli's SSRF guard blocks (internal docker IP). Fail fast with a
+    hint to call officecli_file(action="stage") first.
+    """
+    mcp, store = mcp_server
+    info = store.put("r.pptx", b"pptx-bytes")
+    rec = tmp_path / "argv.txt"
+    _write_stub_argv(Path(mcp._runner.binary_path), rec)
+
+    async with create_connected_server_and_client_session(mcp) as session:
+        await session.initialize()
+        res = await session.call_tool(
+            "officecli_add",
+            {
+                "file_id": info["file_id"],
+                "selector": "/slide[1]",
+                "type": "picture",
+                "prop": [
+                    "src=http://open-webui:8080/api/v1/files/abc/content",
+                    "width=5in",
+                ],
+            },
+        )
+        assert res.isError, res.content
+        text = " ".join(c.text for c in res.content if hasattr(c, "text")).lower()
+        assert "stage" in text
+        # Must NOT have shelled out to officecli (no argv recorded).
+        assert not rec.exists() or rec.read_text().strip() == ""
+
+
+async def test_add_rejects_relative_api_path_src(mcp_server, tmp_path):
+    """Same guard for src=/api/v1/files/... (no scheme) - also not a staged asset."""
+    mcp, store = mcp_server
+    info = store.put("r.pptx", b"pptx-bytes")
+    rec = tmp_path / "argv.txt"
+    _write_stub_argv(Path(mcp._runner.binary_path), rec)
+
+    async with create_connected_server_and_client_session(mcp) as session:
+        await session.initialize()
+        res = await session.call_tool(
+            "officecli_add",
+            {
+                "file_id": info["file_id"],
+                "selector": "/slide[1]",
+                "type": "picture",
+                "prop": ["src=/api/v1/files/abc/content"],
+            },
+        )
+        assert res.isError
+        text = " ".join(c.text for c in res.content if hasattr(c, "text")).lower()
+        assert "stage" in text
+
+
+async def test_add_allows_local_staged_src(mcp_server, tmp_path):
+    """A bare filename (staged asset) is NOT rejected - only URLs/paths are."""
+    mcp, store = mcp_server
+    info = store.put("r.pptx", b"pptx-bytes")
+    rec = tmp_path / "argv.txt"
+    _write_stub_argv(Path(mcp._runner.binary_path), rec)
+
+    async with create_connected_server_and_client_session(mcp) as session:
+        await session.initialize()
+        res = await session.call_tool(
+            "officecli_add",
+            {
+                "file_id": info["file_id"],
+                "selector": "/slide[1]",
+                "type": "picture",
+                "prop": ["src=kimi.png", "width=5in"],
+            },
+        )
+        assert not res.isError, res.content
+    argv = rec.read_text().splitlines()
+    assert "src=kimi.png" in argv
+
+
 async def test_import_tool_argv(mcp_server, tmp_path):
     mcp, store = mcp_server
     info = store.put("r.xlsx", b"xlsx-bytes")
