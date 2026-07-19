@@ -114,9 +114,10 @@ def test_upload_triggers_lazy_sweep(settings, tmp_path):
 def test_default_work_ttl_is_48h():
     """Default TTL is 48 hours (172800s), not the old 1h, so long sessions
     don't lose documents mid-conversation."""
-    from officecli_mcp.config import Settings
     # Construct with no env override (Settings reads env; ensure unset).
     import os as _os
+
+    from officecli_mcp.config import Settings
     saved = _os.environ.pop("OFFICECLI_MCP_WORK_TTL_SECONDS", None)
     try:
         assert Settings().work_ttl_seconds == 48 * 60 * 60

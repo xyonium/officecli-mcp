@@ -44,6 +44,10 @@ def build_mcp(
             "RENDER->LOOK->FIX: use officecli_view_html (HTML text) or "
             "officecli_view_screenshot (PNG image) to see the document, edit with "
             "officecli_set/add/remove/edit, then view again to verify. "
+            "BATCH PROPS: officecli_set and officecli_add take prop as a LIST of "
+            "'key=value' - pass every property for one element in a SINGLE call "
+            "(e.g. prop=[\"x=2cm\",\"y=4cm\",\"width=21cm\",\"height=5cm\"]), never "
+            "one call per property. "
             "Selectors are officecli DOM/CSS paths like /slide[1] or /body/p[2]; run "
             "officecli_view_annotated or officecli_view_outline to discover them. "
             "ASSETS: to insert an image or import CSV, first call `officecli_file` "
@@ -129,7 +133,13 @@ def build_mcp(
 
     @mcp.tool(annotations=_WRITE)
     def officecli_set(file_id: str, selector: str, prop: list[str] | None = None) -> str:
-        """Set a property on matched elements. prop is a list of 'key=value'."""
+        """Set properties on matched elements. prop is a list of 'key=value'.
+
+        Pass MULTIPLE properties in ONE call - do not call set once per
+        property. Example: to position and size a textbox, call
+        officecli_set(prop=["x=2cm","y=4cm","width=21cm","height=5cm"], ...)
+        not four separate calls. Each item becomes its own --prop.
+        """
         argv = ["set", "{path}", selector]
         if prop:
             for p in prop:

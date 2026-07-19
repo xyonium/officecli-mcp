@@ -159,6 +159,22 @@ async def test_set_multi_prop(mcp_server, tmp_path):
     assert argv.count("--prop") == 2
 
 
+async def test_set_docstring_tells_model_to_batch_props(mcp_server):
+    """Regression guard: the model kept calling set once per property (one prop
+    per call -> 4 calls to position a textbox) because the docstring didn't say
+    multiple props go in one call. The docstring must explicitly tell it to pass
+    every property in a single call and show a multi-item example."""
+    mcp, _ = mcp_server
+    async with create_connected_server_and_client_session(mcp) as session:
+        await session.initialize()
+        tools = await session.list_tools()
+    set_tool = next(t for t in tools.tools if t.name == "officecli_set")
+    desc = (set_tool.description or "").lower()
+    assert "single call" in desc or "one call" in desc, set_tool.description
+    # Must show a multi-item example so the model copies the shape.
+    assert "x=2cm" in (set_tool.description or "").lower(), set_tool.description
+
+
 async def test_add_rejects_url_src_with_stage_guidance(mcp_server, tmp_path):
     """officecli_add must refuse src= URLs/paths and point the model at stage,
     instead of letting officecli fail with a confusing SSRF error.
