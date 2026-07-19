@@ -305,3 +305,60 @@ async def test_import_tool_listed(mcp_server):
         await session.initialize()
         tools = await session.list_tools()
         assert "officecli_import" in {t.name for t in tools.tools}
+
+
+async def test_create_surfaces_slide_dimensions(settings, tmp_path):
+    """officecli_create must return the new file_id AND the create stdout,
+    which carries slideWidth/slideHeight. Without the dimensions the model
+    can't size textboxes/pictures to fill the slide - it only knows a
+    bare file_id and guesses sizes, leaving objects in the top-left quadrant.
+    """
+    from officecli_mcp import tools as tools_mod
+    from officecli_mcp.files import FileStore
+    from officecli_mcp.runner import OfficeRunner
+
+    store = FileStore(work_dir=settings.work_dir, ttl_seconds=3600)
+    # Stub mimics officecli `create` stdout: prints the slide dimensions.
+    stub = tmp_path / "officecli"
+    _write_stub(
+        stub,
+        "#!/bin/sh\n"
+        "if [ \"$1\" = \"create\" ]; then\n"
+        "  echo 'Created: deck.pptx'\n"
+        "  echo '  totalSlides: 0'\n"
+        "  echo '  slideWidth: 960pt'\n"
+        "  echo '  slideHeight: 540pt'\n"
+        "else\n"
+        "  echo OK\n"
+        "fi\n",
+    )
+    runner = OfficeRunner(binary_path=str(stub), file_store=store)
+    mcp = tools_mod.build_mcp(runner=runner, file_store=store)
+
+    # A host file_id must exist (its workdir hosts the new file).
+    host = store.put("host.pptx", b"PK\x03\x04host")
+    async with create_connected_server_and_client_session(mcp) as session:
+        await session.initialize()
+        res = await session.call_tool(
+            "officecli_create",
+            {"file_id": host["file_id"], "name": "deck.pptx", "type": "pptx"},
+        )
+    assert not res.isError, res.content
+    text = " ".join(c.text for c in res.content if hasattr(c, "text"))
+    # The model must see the page dimensions so it can size objects to fit.
+    assert "960pt" in text, text
+    assert "540pt" in text, text
+
+
+async def test_instructions_teach_slide_sizing(mcp_server):
+    """Instructions must tell the model the 16:9 pptx page size and that
+    add picture stretches (no crop/fit), so it generates images in the right
+    aspect ratio and uses full-bleed coordinates instead of guessing."""
+    mcp, _ = mcp_server
+    async with create_connected_server_and_client_session(mcp) as session:
+        result = await session.initialize()
+    text = (getattr(result, "instructions", None) or "").lower()
+    # The full-bleed width/height for 16:9 pptx must appear.
+    assert "33.87cm" in text or "960pt" in text, text
+    # And the model must be warned pictures stretch (no auto-crop).
+    assert "stretch" in text or "no crop" in text or "aspect ratio" in text, text
