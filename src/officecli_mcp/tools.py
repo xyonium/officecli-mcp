@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import uuid
 
 from mcp.server.fastmcp import FastMCP, Image
@@ -29,6 +30,8 @@ def build_mcp(
     *,
     host: str = "0.0.0.0",
     transport_security: TransportSecuritySettings | None = None,
+    view_html_mode: int = 2,
+    view_html_max_chars: int = 8000,
 ) -> FastMCP:
     mcp = FastMCP(
         "officecli-mcp",
@@ -97,8 +100,27 @@ def build_mcp(
 
     @mcp.tool(annotations=_READ_ONLY)
     def officecli_view_html(file_id: str) -> str:
-        """Render document to HTML (returned as text). PPTX/DOCX. Read-only."""
-        return _run_text(runner, file_id, ["view", "{path}", "html"])
+        """Render document to HTML. PPTX/DOCX. Read-only.
+
+        Output is governed by OFFICECLI_MCP_VIEW_HTML_MODE: 0=disabled, 1=full
+        HTML, 2=compact (default; base64 images -> [IMG], styles/scripts
+        stripped - small enough for the context), 3=truncated. officecli's raw
+        HTML is a full interactive page that can blow the context on complex
+        docs, so compact is the default. For a faithful visual check use
+        officecli_view_screenshot instead.
+        """
+        if view_html_mode == 0:
+            return _err(
+                "view_html is disabled (OFFICECLI_MCP_VIEW_HTML_MODE=0). Use "
+                "officecli_view_screenshot for a visual check or "
+                "officecli_view_annotated/outline for structure."
+            )
+        html = _run_text(runner, file_id, ["view", "{path}", "html"])
+        if view_html_mode == 1:
+            return html
+        if view_html_mode == 3:
+            return _truncate_html(html, view_html_max_chars)
+        return _compact_html(html)  # mode 2 (default)
 
     @mcp.tool(annotations=_READ_ONLY)
     def officecli_view_screenshot(file_id: str, page: int | None = None) -> Image:
@@ -299,6 +321,42 @@ def _run(runner: OfficeRunner, file_id: str, argv: list[str]):
         return runner.run(file_id, argv)
     except FileIDNotFound as e:
         raise ToolError(f"file_id '{file_id}' not found or expired") from e
+
+
+_BASE64_IMG_RE = re.compile(r'<img[^>]*src="data:image/[^"]+"[^>]*>', re.IGNORECASE)
+_SCRIPT_RE = re.compile(r"<script\b[^>]*>.*?</script>", re.IGNORECASE | re.DOTALL)
+_STYLE_RE = re.compile(r"<style\b[^>]*>.*?</style>", re.IGNORECASE | re.DOTALL)
+_TAG_RE = re.compile(r"<[^>]+>")
+_WS_RE = re.compile(r"[ \t]+")
+_BLANK_LINE_RE = re.compile(r"\n\s*\n+")
+
+
+def _compact_html(html: str) -> str:
+    """Reduce officecli's full interactive HTML to a small text skeleton.
+
+    officecli view html emits a full page (CSS, JS, base64 images, sidebar)
+    that can blow the model context. For compact mode we drop style/script
+    blocks, replace each base64 image with an [IMG] placeholder, strip
+    remaining tags, and collapse whitespace - leaving the visible text and
+    structure the model needs to locate edits, at a fraction of the size.
+    """
+    s = _SCRIPT_RE.sub("", html)
+    s = _STYLE_RE.sub("", s)
+    s = _BASE64_IMG_RE.sub("[IMG]", s)
+    s = _TAG_RE.sub("", s)  # drop remaining tags, keep their text content
+    # Decode the common entities officecli emits so text is readable.
+    s = (s.replace("&nbsp;", " ").replace("&amp;", "&")
+          .replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", '"'))
+    s = _WS_RE.sub(" ", s)
+    s = _BLANK_LINE_RE.sub("\n", s)
+    return s.strip()
+
+
+def _truncate_html(html: str, max_chars: int) -> str:
+    """Return the raw HTML truncated to max_chars with a truncation note."""
+    if len(html) <= max_chars:
+        return html
+    return f"{html[:max_chars]}\n...[truncated: {len(html)} chars total; set OFFICECLI_MCP_VIEW_HTML_MODE=2 for compact or =1 for full]"
 
 
 def _reject_url_src(prop: list[str] | None) -> None:

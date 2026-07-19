@@ -68,6 +68,94 @@ async def test_view_html_returns_text(mcp_server):
         assert any("HI" in t for t in texts)
 
 
+def _html_stub(path: Path) -> None:
+    """Stub emitting a realistic officecli HTML chunk: style, script, base64 img, text."""
+    path.write_text(
+        "#!/bin/sh\n"
+        "printf '%s' '<html><head><style>body{color:red}</style>"
+        "<script>console.log(1)</script></head><body>"
+        "<img src=\"data:image/png;base64,iVBORw0KGgoAAAANS==\">"
+        "<div>Hello Title</div></body></html>'\n"
+    )
+    path.chmod(0o755)
+
+
+def _build_mcp_with_mode(settings, tmp_path, mode, max_chars=8000):
+    from officecli_mcp import tools as tools_mod
+    from officecli_mcp.files import FileStore
+    from officecli_mcp.runner import OfficeRunner
+
+    store = FileStore(work_dir=settings.work_dir, ttl_seconds=3600)
+    stub = tmp_path / "officecli"
+    _html_stub(stub)
+    runner = OfficeRunner(binary_path=str(stub), file_store=store)
+    return tools_mod.build_mcp(
+        runner=runner, file_store=store, view_html_mode=mode, view_html_max_chars=max_chars
+    ), store
+
+
+async def test_view_html_mode_0_disabled_returns_error(settings, tmp_path):
+    mcp, store = _build_mcp_with_mode(settings, tmp_path, 0)
+    info = store.put("r.docx", b"x")
+    async with create_connected_server_and_client_session(mcp) as session:
+        await session.initialize()
+        res = await session.call_tool("officecli_view_html", {"file_id": info["file_id"]})
+    text = " ".join(c.text for c in res.content if hasattr(c, "text"))
+    assert "disabled" in text.lower(), text
+    # Must point the model at an alternative.
+    assert "screenshot" in text.lower(), text
+
+
+async def test_view_html_mode_1_full_returns_raw_html(settings, tmp_path):
+    mcp, store = _build_mcp_with_mode(settings, tmp_path, 1)
+    info = store.put("r.docx", b"x")
+    async with create_connected_server_and_client_session(mcp) as session:
+        await session.initialize()
+        res = await session.call_tool("officecli_view_html", {"file_id": info["file_id"]})
+    text = " ".join(c.text for c in res.content if hasattr(c, "text"))
+    assert "<html>" in text, text  # raw HTML preserved
+    assert "data:image/png;base64" in text  # base64 image preserved
+
+
+async def test_view_html_mode_2_compact_strips_images_and_styles(settings, tmp_path):
+    mcp, store = _build_mcp_with_mode(settings, tmp_path, 2)
+    info = store.put("r.docx", b"x")
+    async with create_connected_server_and_client_session(mcp) as session:
+        await session.initialize()
+        res = await session.call_tool("officecli_view_html", {"file_id": info["file_id"]})
+    text = " ".join(c.text for c in res.content if hasattr(c, "text"))
+    assert "Hello Title" in text, text  # visible text kept
+    assert "data:image" not in text, text  # base64 image stripped
+    assert "[IMG]" in text, text  # replaced with placeholder
+    assert "<style>" not in text and "<script>" not in text, text  # stripped
+    assert "<html>" not in text, text  # tags stripped
+
+
+async def test_view_html_mode_3_truncates(settings, tmp_path):
+    mcp, store = _build_mcp_with_mode(settings, tmp_path, 3, max_chars=50)
+    info = store.put("r.docx", b"x")
+    async with create_connected_server_and_client_session(mcp) as session:
+        await session.initialize()
+        res = await session.call_tool("officecli_view_html", {"file_id": info["file_id"]})
+    text = " ".join(c.text for c in res.content if hasattr(c, "text"))
+    assert "[truncated" in text, text
+    assert len(text.split("[truncated")[0]) <= 60, len(text)  # ~max_chars before note
+
+
+async def test_view_html_default_mode_is_compact():
+    """Default OFFICECLI_MCP_VIEW_HTML_MODE is 2 (compact), not 1 (full) -
+    full HTML blows the model context, so compact must be the safe default."""
+    import os as _os
+    saved = _os.environ.pop("OFFICECLI_MCP_VIEW_HTML_MODE", None)
+    try:
+        from officecli_mcp.config import Settings
+        assert Settings().view_html_mode == 2
+        assert Settings().view_html_max_chars == 8000
+    finally:
+        if saved is not None:
+            _os.environ["OFFICECLI_MCP_VIEW_HTML_MODE"] = saved
+
+
 async def test_view_screenshot_returns_image(mcp_server, tmp_path, settings):
     mcp, store = mcp_server
     info = store.put("r.pptx", b"pptx-bytes")
