@@ -85,7 +85,7 @@ class Tools:
         """Push an asset into officecli-mcp /files/stage (stage action) -> asset name."""
         url = f"{self.valves.officecli_mcp_url}/files/stage"
         files = {"file": (filename, data, "application/octet-stream")}
-        data_field = {"target_file_id": target_file_id, "filename": filename}
+        data_field = {"target_file_id": target_file_id}
         resp = requests.post(url, data=data_field, files=files, timeout=120)
         resp.raise_for_status()
         return resp.json()
@@ -106,6 +106,13 @@ class Tools:
         )
         resp.raise_for_status()
         return resp.json()
+
+    @staticmethod
+    def _resolve_attached(f: dict[str, Any], fallback_name: str = "asset.bin") -> tuple[str, str]:
+        """Extract (file_id, name) from a single __files__ entry dict."""
+        file_id = f.get("id") or (f.get("file") or {}).get("id")
+        name = f.get("name") or f.get("filename") or fallback_name
+        return file_id, name
 
     @staticmethod
     def _filename_from_disposition(resp: requests.Response, fallback: str) -> str:
@@ -168,10 +175,7 @@ class Tools:
             return json.dumps({"error": "no files attached"})
         out = []
         for f in __files__:
-            file_id = f.get("id")
-            name = f.get("name") or f.get("filename") or "upload.docx"
-            if not file_id:
-                file_id = (f.get("file") or {}).get("id")
+            file_id, name = self._resolve_attached(f, "upload.docx")
             if not file_id:
                 continue
             try:
@@ -238,9 +242,7 @@ class Tools:
             data = await anyio.to_thread.run_sync(self._owui_get, source_file_id, __request__)
             return data, ""
         if files:
-            f = files[0]
-            fid = f.get("id") or (f.get("file") or {}).get("id")
-            name = f.get("name") or f.get("filename") or "asset.bin"
+            fid, name = self._resolve_attached(files[0], "asset.bin")
             if not fid:
                 raise ValueError("attached file has no id")
             data = await anyio.to_thread.run_sync(self._owui_get, fid, __request__)

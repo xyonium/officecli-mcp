@@ -140,3 +140,22 @@ def test_run_nonzero_exit_captured(settings, tmp_path):
     res = runner.run(info["file_id"], ["validate", "{path}"])
     assert res.exit_code == 3
     assert "boom" in res.stderr
+
+
+def test_resolve_returns_doc_not_staged_asset(settings, tmp_path):
+    """Regression: runner.resolve must return the original doc, not a staged asset
+    or screenshot product (the path_for fix that prefers .docx over .png)."""
+    from officecli_mcp.files import FileStore
+    from officecli_mcp.runner import OfficeRunner
+
+    store = FileStore(work_dir=settings.work_dir, ttl_seconds=3600)
+    info = store.put("deck.pptx", b"PK\x03\x04pptx")
+    store.stage_asset(info["file_id"], "kimi.png", b"\x89PNG\r\n\x1a\nfake")
+    Path(settings.work_dir, info["file_id"], "shot.png").write_bytes(b"\x89PNG")
+
+    stub = tmp_path / "officecli"
+    _write_stub(stub, "#!/bin/sh\necho ok\n")
+    runner = OfficeRunner(binary_path=str(stub), file_store=store)
+
+    p = runner.resolve(info["file_id"])
+    assert p.name == "deck.pptx"
