@@ -45,7 +45,7 @@ class Settings:
     port: int = _env_int("OFFICECLI_MCP_PORT", 8765)
     data_dir: str = os.environ.get("OFFICECLI_MCP_DATA_DIR", "/data")
     work_dir: str = os.environ.get("OFFICECLI_MCP_WORK_DIR", "/work")
-    work_ttl_seconds: int = _env_int("OFFICECLI_MCP_WORK_TTL_SECONDS", 3600)
+    work_ttl_seconds: int = _env_int("OFFICECLI_MCP_WORK_TTL_SECONDS", 48 * 60 * 60)
     max_upload_mb: int = _env_int("OFFICECLI_MCP_MAX_UPLOAD_MB", 50)
     officecli_version: str = os.environ.get("OFFICECLI_VERSION", "latest")
     officecli_sha256: str = os.environ.get("OFFICECLI_SHA256", "")

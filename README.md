@@ -84,7 +84,7 @@ All MCP tools are prefixed `officecli_` and take a `file_id` handle (returned by
 | `OFFICECLI_MCP_PORT` | 8765 | HTTP port |
 | `OFFICECLI_MCP_DATA_DIR` | /data | where the officecli binary lives |
 | `OFFICECLI_MCP_WORK_DIR` | /work | per-file_id workdirs |
-| `OFFICECLI_MCP_WORK_TTL_SECONDS` | 3600 | idle file cleanup |
+| `OFFICECLI_MCP_WORK_TTL_SECONDS` | 172800 (48h) | idle workdir cleanup (doc + staged assets); swept lazily on each upload/stage, mtime refreshed on read |
 | `OFFICECLI_MCP_MAX_UPLOAD_MB` | 50 | upload size cap |
 | `OFFICECLI_VERSION` | latest | pin a release tag |
 | `OFFICECLI_SHA256` | (none) | verify binary integrity |

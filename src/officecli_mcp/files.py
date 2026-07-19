@@ -69,6 +69,12 @@ class FileStore:
         d = self._dir(file_id)
         if not d.exists():
             raise KeyError(file_id)
+        # Refresh the workdir mtime on access so the TTL sweep treats a
+        # frequently-read document as recently used (not just recently written).
+        try:
+            os.utime(d, None)
+        except OSError:
+            pass
         if filename:
             return d / _safe_filename(filename)
         # Return only document-extension files; staged assets (png/csv/...) and
@@ -157,6 +163,7 @@ async def upload(request: Request) -> Response:
         info = store.put(filename, data)
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=415)
+    store.sweep()  # lazy TTL cleanup of idle workdirs
     return JSONResponse(info)
 
 
@@ -212,6 +219,7 @@ async def stage(request: Request) -> Response:
         )
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=415)
+    store.sweep()  # lazy TTL cleanup of idle workdirs
     return JSONResponse(info)
 
 
