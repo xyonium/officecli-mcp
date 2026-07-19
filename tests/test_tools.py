@@ -362,3 +362,55 @@ async def test_instructions_teach_slide_sizing(mcp_server):
     assert "33.87cm" in text or "960pt" in text, text
     # And the model must be warned pictures stretch (no auto-crop).
     assert "stretch" in text or "no crop" in text or "aspect ratio" in text, text
+
+
+async def test_run_text_error_includes_stdout_not_just_stderr(settings, tmp_path):
+    """officecli writes partial-failure context to stdout (e.g. 'No properties
+    applied to /slide[1]' alongside a stderr 'UNSUPPORTED props' list). The
+    ToolError on non-zero exit must include stdout when present, or the model
+    loses the 'what actually happened' half of the error."""
+
+    from officecli_mcp import tools as tools_mod
+    from officecli_mcp.files import FileStore
+    from officecli_mcp.runner import OfficeRunner
+
+    store = FileStore(work_dir=settings.work_dir, ttl_seconds=3600)
+    info = store.put("r.pptx", b"PK\x03\x04pptx")
+    # Stub: prints context to stdout, an error to stderr, exits non-zero -
+    # mirrors officecli's real 'set unsupported prop' behavior.
+    stub = tmp_path / "officecli"
+    _write_stub(
+        stub,
+        "#!/bin/sh\necho 'No properties applied to /slide[1]'\n"
+        "echo 'UNSUPPORTED props: bogusprop' 1>&2\nexit 2\n",
+    )
+    runner = OfficeRunner(binary_path=str(stub), file_store=store)
+    mcp = tools_mod.build_mcp(runner=runner, file_store=store)
+
+    async with create_connected_server_and_client_session(mcp) as session:
+        await session.initialize()
+        res = await session.call_tool(
+            "officecli_set",
+            {"file_id": info["file_id"], "selector": "/slide[1]", "prop": ["bogusprop=1"]},
+        )
+    # Non-zero exit -> isError; the stdout context must reach the model.
+    assert res.isError, res.content
+    err_text = " ".join(c.text for c in res.content if hasattr(c, "text"))
+    assert "UNSUPPORTED props" in err_text, err_text  # from stderr (already worked)
+    assert "No properties applied" in err_text, err_text  # from stdout (was dropped)
+
+
+async def test_get_docstring_advertises_size_and_format(mcp_server):
+    """officecli_get --json returns the element's current x/y/width/height and
+    effective properties - exactly what the model needs to fix 'objects only
+    fill the top-left quadrant' (get current size, compare to page, set new
+    size). The docstring must say so or the model won't reach for it."""
+    mcp, _ = mcp_server
+    async with create_connected_server_and_client_session(mcp) as session:
+        await session.initialize()
+        tools = await session.list_tools()
+    get_tool = next(t for t in tools.tools if t.name == "officecli_get")
+    desc = (get_tool.description or "").lower()
+    # Must advertise that it returns position/size/format.
+    assert "size" in desc or "width" in desc or "position" in desc, get_tool.description
+    assert "json" in desc, get_tool.description  # --json gives structured format
