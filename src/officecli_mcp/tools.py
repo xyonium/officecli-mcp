@@ -44,6 +44,10 @@ def build_mcp(
             "RENDER->LOOK->FIX: use officecli_view_html (HTML text) or "
             "officecli_view_screenshot (PNG image) to see the document, edit with "
             "officecli_set/add/remove/edit, then view again to verify. "
+            "INSPECT BEFORE RESIZE: to size an element to fill the page, first "
+            "officecli_get(selector, json=true) to read its current x/y/width/height, "
+            "compare to the page dimensions from officecli_create, then officecli_set "
+            "the new size in one call. "
             "BATCH PROPS: officecli_set and officecli_add take prop as a LIST of "
             "'key=value' - pass every property for one element in a SINGLE call "
             "(e.g. prop=[\"x=2cm\",\"y=4cm\",\"width=21cm\",\"height=5cm\"]), never "
@@ -133,7 +137,16 @@ def build_mcp(
 
     @mcp.tool(annotations=_READ_ONLY)
     def officecli_get(file_id: str, selector: str, depth: int | None = None, json: bool = False) -> str:
-        """Get an element by selector (e.g. /slide[1]). Read-only."""
+        """Get an element by selector (e.g. /slide[1]). Read-only.
+
+        Returns the element's current position and size (x/y/width/height) and
+        its format/properties. Use --json for structured output including
+        'effective' computed properties (font, etc.) and child elements. Use
+        this to INSPECT an element's current size before resizing it with
+        officecli_set (e.g. check a textbox's width/height, compare to the
+        page size from officecli_create, then set the new size in one call).
+        depth=N expands N levels of children to discover selectors.
+        """
         argv = ["get", "{path}", selector]
         if depth is not None:
             argv += ["--depth", str(depth)]
@@ -300,5 +313,18 @@ def _run_text(runner: OfficeRunner, file_id: str, argv: list[str]) -> str:
     except FileIDNotFound as e:
         raise ToolError(f"file_id '{file_id}' not found or expired") from e
     if res.exit_code != 0:
-        raise ToolError(f"officecli exited {res.exit_code}: {res.stderr.strip()}")
-    return res.stdout.strip()
+        # officecli splits failure info across streams: the cause usually goes
+        # to stderr ('UNSUPPORTED props: ...', 'Error: Slide 99 not found'),
+        # but partial-failure context goes to stdout ('No properties applied
+        # to /slide[1]'). Include both so the model sees the whole picture.
+        parts = [f"officecli exited {res.exit_code}"]
+        if res.stderr.strip():
+            parts.append(res.stderr.strip())
+        if res.stdout.strip():
+            parts.append(f"stdout: {res.stdout.strip()}")
+        raise ToolError("\n".join(parts))
+    # Surface non-fatal warnings officecli writes to stderr on success.
+    out = res.stdout.strip()
+    if res.stderr.strip():
+        out = f"{out}\n[stderr] {res.stderr.strip()}" if out else res.stderr.strip()
+    return out
