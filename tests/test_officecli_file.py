@@ -85,7 +85,7 @@ async def test_download_action_pushes_to_owui_storage(monkeypatch):
     tools.valves = mod.Tools.Valves(
         officecli_mcp_url="http://mcp",
         openwebui_url="http://owui",
-        openwebui_browser_url="https://ai.savorcare.com",
+        openwebui_browser_url="https://openwebui.example.com",
     )
 
     monkeypatch.setattr(
@@ -110,7 +110,7 @@ async def test_download_action_pushes_to_owui_storage(monkeypatch):
             file_id=file_id,
         )
     )
-    assert result["url"] == "https://ai.savorcare.com/api/v1/files/owui-xyz/content", result
+    assert result["url"] == "https://openwebui.example.com/api/v1/files/owui-xyz/content", result
     assert result["filename"] == "Kimi_K3.pptx", result
     assert result["size"] == len(file_bytes), result
     assert received_auth["auth"] == "Bearer current-user-token", received_auth
@@ -166,7 +166,7 @@ async def test_download_action_emits_files_event_for_sidebar_chip(monkeypatch):
     tools.valves = mod.Tools.Valves(
         officecli_mcp_url="http://mcp",
         openwebui_url="http://owui",
-        openwebui_browser_url="https://ai.savorcare.com",
+        openwebui_browser_url="https://openwebui.example.com",
     )
     monkeypatch.setattr(tools, "_mcp_get", lambda fid: mcp_client.get(f"/files/{fid}"))
     monkeypatch.setattr(
@@ -193,7 +193,7 @@ async def test_download_action_emits_files_event_for_sidebar_chip(monkeypatch):
     )
 
     # The returned JSON url keeps /content (for the model's text link).
-    assert result["url"] == "https://ai.savorcare.com/api/v1/files/owui-xyz/content", result
+    assert result["url"] == "https://openwebui.example.com/api/v1/files/owui-xyz/content", result
 
     # Exactly one files event was emitted, with a single file chip.
     assert len(emitted) == 1, emitted
@@ -206,7 +206,7 @@ async def test_download_action_emits_files_event_for_sidebar_chip(monkeypatch):
     assert chip["name"] == "Kimi_K3.pptx", chip
     assert chip["size"] == len(file_bytes), chip
     # The chip url is the BARE file base - FileItem appends /content itself.
-    assert chip["url"] == "https://ai.savorcare.com/api/v1/files/owui-xyz", chip
+    assert chip["url"] == "https://openwebui.example.com/api/v1/files/owui-xyz", chip
     assert "/content" not in chip["url"].rsplit("owui-xyz", 1)[-1], chip
 
 
@@ -250,7 +250,7 @@ async def test_download_without_event_emitter_still_works(monkeypatch):
     tools = mod.Tools()
     tools.valves = mod.Tools.Valves(
         officecli_mcp_url="http://mcp", openwebui_url="http://owui",
-        openwebui_browser_url="https://ai.savorcare.com",
+        openwebui_browser_url="https://openwebui.example.com",
     )
     monkeypatch.setattr(tools, "_mcp_get", lambda fid: mcp_client.get(f"/files/{fid}"))
     monkeypatch.setattr(
@@ -270,7 +270,7 @@ async def test_download_without_event_emitter_still_works(monkeypatch):
             file_id=file_id,
         )
     )
-    assert result["url"] == "https://ai.savorcare.com/api/v1/files/owui-abc/content", result
+    assert result["url"] == "https://openwebui.example.com/api/v1/files/owui-abc/content", result
 
 
 async def test_upload_action_returns_file_ids(monkeypatch):
@@ -628,7 +628,7 @@ def test_valves_is_pydantic_model_with_schema():
 
     # Valves(**form_data) applies saved values (OpenWebUI update path), and
     # unset fields keep their defaults.
-    v = Valves(openwebui_browser_url="https://ai.savorcare.com")
+    v = Valves(openwebui_browser_url="https://openwebui.example.com")
     assert v.officecli_mcp_url == "http://officecli-mcp:8765"
-    assert v.openwebui_browser_url == "https://ai.savorcare.com"
+    assert v.openwebui_browser_url == "https://openwebui.example.com"
 

@@ -21,7 +21,7 @@ Install: Workspace > Tools > paste this file. Set Valves:
   - officecli_mcp_url:       internal officecli-mcp base, e.g. http://officecli-mcp:8765
   - openwebui_url:           internal OpenWebUI base used for API calls, e.g. http://open-webui:8080
   - openwebui_browser_url:   browser-reachable OpenWebUI base for returned download URLs,
-                             e.g. https://ai.savorcare.com (default "" -> falls back to openwebui_url)
+                             e.g. https://openwebui.example.com (default "" -> falls back to openwebui_url)
 
 Attach this tool to a model alongside the officecli-mcp MCP connection. For uploads
 the model calls officecli_file(action="upload", __files__=...) to get a file_id, then

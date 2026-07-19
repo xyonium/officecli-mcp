@@ -24,7 +24,7 @@ Two problems to solve together:
 
 officecli-mcp runs on the **internal docker network only** and is not reachable from the
 user's browser. Therefore a download action cannot simply return an `http://officecli-mcp:...`
-link - the browser could not load it. OpenWebUI itself (`https://ai.savorcare.com` in this
+link - the browser could not load it. OpenWebUI itself (`https://openwebui.example.com` in this
 deployment) IS browser-reachable. So the download action pushes the file bytes into
 OpenWebUI's own file storage and returns an OpenWebUI URL the browser can load.
 
@@ -67,7 +67,7 @@ Net effect on the tool list: **2 entries -> 1 entry** (`officecli_upload` replac
 ```python
 officecli_mcp_url      = "http://officecli-mcp:8765"  # internal: tool -> officecli-mcp
 openwebui_url          = "http://open-webui:8080"     # internal: tool -> OWUI storage API
-openwebui_browser_url  = "https://ai.savorcare.com"   # browser-reachable OWUI base; used in returned download URLs
+openwebui_browser_url  = "https://openwebui.example.com"   # browser-reachable OWUI base; used in returned download URLs
 ```
 
 - `officecli_mcp_url` and `openwebui_url` are the internal docker addresses the tool uses
@@ -77,7 +77,7 @@ openwebui_browser_url  = "https://ai.savorcare.com"   # browser-reachable OWUI b
   the user, because the user's browser reaches OWUI at a different (public) address than the
   tool does internally. Default empty -> falls back to `openwebui_url` (only correct when
   browser and tool share an address). For this deployment it is set to
-  `https://ai.savorcare.com`.
+  `https://openwebui.example.com`.
 
 ## Files & structure
 
@@ -126,10 +126,10 @@ Unit tests in `tests/test_officecli_file.py` (mocked HTTP via in-process Starlet
 4. `test_owui_headers_forwards_authorization` - kept from today (both actions use it).
 
 Manual verification (spec's definition-of-done): install `officecli_file` in the deployment's
-OpenWebUI with Valves set (`officecli_mcp_url`, `openwebui_url`, `openwebui_browser_url=https://ai.savorcare.com`);
+OpenWebUI with Valves set (`officecli_mcp_url`, `openwebui_url`, `openwebui_browser_url=https://openwebui.example.com`);
 have the model `officecli_create` a doc, then call
 `officecli_file(action="download", file_id=<id>)`; confirm the returned URL loads the file in
-a browser at `https://ai.savorcare.com/api/v1/files/{owui_id}/content`.
+a browser at `https://openwebui.example.com/api/v1/files/{owui_id}/content`.
 
 ## References
 

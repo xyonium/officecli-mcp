@@ -15,7 +15,7 @@
 - HTTP helpers (`_owui_get`, `_owui_post`, `_mcp_get`, `_mcp_post`) must be **separate methods** so tests monkeypatch them to route through in-process `TestClient`s (mirrors the existing shim's pattern).
 - officecli-mcp download endpoint is `GET {officecli_mcp_url}/files/{file_id}` returning bytes with `content-disposition: attachment; filename="<name>"`. It is a plain custom route, NOT behind the MCP DNS-rebinding guard, so the Host-header fix (PR #4) is not a dependency.
 - OpenWebUI storage endpoint: `POST {openwebui_url}/api/v1/files/?process=false` with multipart `files={"file": (filename, data, mime)}`, Authorization forwarded; returns `{"id": "<owui_file_id>", ...}`. Verified to exist on the deployment (returns 401 without auth, not 404).
-- `openwebui_browser_url` Valve (new) is the browser-reachable OWUI base prepended to returned download URLs; default `""` falls back to `openwebui_url`. For this deployment: `https://ai.savorcare.com`.
+- `openwebui_browser_url` Valve (new) is the browser-reachable OWUI base prepended to returned download URLs; default `""` falls back to `openwebui_url`. For this deployment: `https://openwebui.example.com`.
 - The download endpoint serves files under a TTL (`OFFICECLI_MCP_WORK_TTL_SECONDS`, default 3600s). On a 404 from officecli-mcp, return an error mentioning expiry.
 - Replace, do not keep, the old `examples/openwebui_officecli_upload.py` and `tests/test_upload_shim.py`. No deprecation stub.
 - Commits: small, frequent, one logical change each. Branch is `feat/merged-officecli-file-tool` (already created, branched from `main`).
@@ -138,7 +138,7 @@ def test_download_action_pushes_to_owui_storage(monkeypatch):
     tools.valves = mod.Tools.Valves(
         officecli_mcp_url="http://mcp",
         openwebui_url="http://owui",
-        openwebui_browser_url="https://ai.savorcare.com",
+        openwebui_browser_url="https://openwebui.example.com",
     )
 
     monkeypatch.setattr(
@@ -163,7 +163,7 @@ def test_download_action_pushes_to_owui_storage(monkeypatch):
             file_id=file_id,
         )
     )
-    assert result["url"] == "https://ai.savorcare.com/api/v1/files/owui-xyz/content", result
+    assert result["url"] == "https://openwebui.example.com/api/v1/files/owui-xyz/content", result
     assert result["filename"] == "Kimi_K3.pptx", result
     assert result["size"] == len(file_bytes), result
     assert received_auth["auth"] == "Bearer current-user-token", received_auth
@@ -203,7 +203,7 @@ Install: Workspace > Tools > paste this file. Set Valves:
   - officecli_mcp_url:       internal officecli-mcp base, e.g. http://officecli-mcp:8765
   - openwebui_url:           internal OpenWebUI base used for API calls, e.g. http://open-webui:8080
   - openwebui_browser_url:   browser-reachable OpenWebUI base for returned download URLs,
-                             e.g. https://ai.savorcare.com (default "" -> falls back to openwebui_url)
+                             e.g. https://openwebui.example.com (default "" -> falls back to openwebui_url)
 
 Attach this tool to a model alongside the officecli-mcp MCP connection. For uploads
 the model calls officecli_file(action="upload", __files__=...) to get a file_id, then
@@ -567,7 +567,7 @@ In `README.md`:
   `OpenWebUI: add an MCP connection at http://officecli-mcp:8765/mcp (native MCP, streamable-HTTP), and install the officecli_file native tool from examples/openwebui_officecli_file.py with its Valves set (officecli_mcp_url, openwebui_url, openwebui_browser_url).`
 - In the "Tools" section note, change `the officecli_upload tool` to `the officecli_file tool (action="upload")`.
 - In "OpenWebUI setup" step 2, change to:
-  `Install the native tool examples/openwebui_officecli_file.py (Workspace > Tools); set Valves (officecli_mcp_url, openwebui_url, openwebui_browser_url=https://ai.savorcare.com); make it Public; attach to the model. Use action="upload" to get a file_id from attached files, action="download" to get a browser-reachable download link for a finished file.`
+  `Install the native tool examples/openwebui_officecli_file.py (Workspace > Tools); set Valves (officecli_mcp_url, openwebui_url, openwebui_browser_url=https://openwebui.example.com); make it Public; attach to the model. Use action="upload" to get a file_id from attached files, action="download" to get a browser-reachable download link for a finished file.`
 
 - [ ] **Step 2: Update CLAUDE.md**
 
@@ -605,11 +605,11 @@ Expected: `200`.
 - [ ] **Step 2: Install the tool in OpenWebUI**
 
 In OpenWebUI (Workspace > Tools), paste the contents of `examples/openwebui_officecli_file.py`. Set Valves:
-`officecli_mcp_url=http://officecli-mcp:8765`, `openwebui_url=http://open-webui:8080`, `openwebui_browser_url=https://ai.savorcare.com`. Make it Public, attach to a model that also has the officecli-mcp MCP connection.
+`officecli_mcp_url=http://officecli-mcp:8765`, `openwebui_url=http://open-webui:8080`, `openwebui_browser_url=https://openwebui.example.com`. Make it Public, attach to a model that also has the officecli-mcp MCP connection.
 
 - [ ] **Step 3: Drive the download flow**
 
-In a chat with that model: have it create a doc (`officecli_create`), then call `officecli_file(action="download", file_id=<the id>)`. Confirm the returned JSON `url` looks like `https://ai.savorcare.com/api/v1/files/<id>/content` and that clicking it (while logged in) downloads the file.
+In a chat with that model: have it create a doc (`officecli_create`), then call `officecli_file(action="download", file_id=<the id>)`. Confirm the returned JSON `url` looks like `https://openwebui.example.com/api/v1/files/<id>/content` and that clicking it (while logged in) downloads the file.
 
 - [ ] **Step 4: Record results**
 
@@ -630,7 +630,7 @@ gh pr create --base main --head feat/merged-officecli-file-tool \
 
 **1. Spec coverage:**
 - Single method + `action` param (upload/download): Task 1. ✓
-- Download pushes to OWUI storage via `POST /api/v1/files/?process=false`, returns browser URL: Task 1 `_download` + Step 1 test asserts `process=false` and the `https://ai.savorcare.com/...` URL. ✓
+- Download pushes to OWUI storage via `POST /api/v1/files/?process=false`, returns browser URL: Task 1 `_download` + Step 1 test asserts `process=false` and the `https://openwebui.example.com/...` URL. ✓
 - Three Valves incl. `openwebui_browser_url` with fallback: Task 1 `Valves` + `_download` `base = openwebui_browser_url or openwebui_url`. ✓
 - Auth forwarding (Bearer/cookie) reused for both actions: Task 1 `_owui_headers` used by `_owui_get` and `_owui_post`; tested in both action tests. ✓
 - Replace old file + tests (no stub): Task 3. ✓
