@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import os
 from pathlib import Path
 
@@ -164,3 +165,49 @@ def test_stage_image_into_pptx(app, tmp_path):
     z = zipfile.ZipFile(io.BytesIO(dl.content))
     names = z.namelist()
     assert any("media" in n and n.endswith(".png") for n in names), names
+
+def test_batch_with_docstring_example_schema(app):
+    """The officecli_batch docstring shows an exact JSON schema. This test runs
+    a batch built to that schema against the real binary to guarantee the
+    documented example actually works - so the model can copy it verbatim."""
+    import asyncio
+
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    client = TestClient(app)
+    mcp = app.state.mcp
+    up = client.post("/files", files={"file": ("seed.pptx", b"PK", "application/octet-stream")})
+    assert up.status_code == 200
+    seed_id = up.json()["file_id"]
+
+    async def run():
+        async with create_connected_server_and_client_session(mcp) as session:
+            await session.initialize()
+            cr = await session.call_tool(
+                "officecli_create", {"file_id": seed_id, "name": "b.pptx", "type": "pptx"}
+            )
+            new_id = "\n".join(c.text for c in cr.content if hasattr(c, "text")).splitlines()[0].strip()
+            # Schema straight from the docstring: parent for add, path for set,
+            # props as a key->value MAP.
+            cmds = json.dumps(
+                [
+                    {"command": "add", "parent": "/", "type": "slide"},
+                    {
+                        "command": "add",
+                        "parent": "/slide[1]",
+                        "type": "shape",
+                        "props": {"x": "1cm", "y": "1cm", "width": "5cm", "height": "3cm"},
+                    },
+                    {"command": "set", "path": "/slide[1]/shape[1]", "props": {"line": "none"}},
+                ]
+            )
+            r = await session.call_tool(
+                "officecli_batch", {"file_id": new_id, "commands_json": cmds}
+            )
+            out = "\n".join(c.text for c in r.content if hasattr(c, "text"))
+            assert not r.isError, out
+            # All items must succeed (atomic mode rolls back on any failure).
+            assert "3 succeeded" in out, out
+            assert "0 failed" in out, out
+
+    asyncio.run(run())
