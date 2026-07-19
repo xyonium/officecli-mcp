@@ -75,6 +75,56 @@ def test_ttl_sweep_removes_old(settings, tmp_path):
     assert not d.exists()
 
 
+def test_path_for_refreshes_mtime_so_active_docs_survive_sweep(settings):
+    """A frequently-read document should not be swept even if it was created
+    long ago - path_for touches the workdir mtime on access."""
+    from officecli_mcp.files import FileStore
+    store = FileStore(work_dir=settings.work_dir, ttl_seconds=3600)
+    doc = store.put("deck.pptx", b"PK\x03\x04pptx")
+    d = Path(settings.work_dir, doc["file_id"])
+    # Backdate creation to well beyond TTL, as if the doc sat idle for days.
+    ancient = time.time() - (3600 + 600)
+    os.utime(d, (ancient, ancient))
+    # Now access it (model reads/views the doc) - mtime should refresh to ~now.
+    store.path_for(doc["file_id"])
+    mtime_after_access = d.stat().st_mtime
+    assert mtime_after_access > ancient + 1000  # refreshed, not ancient anymore
+    # Sweep should NOT remove it now that it was recently accessed.
+    store.sweep()
+    assert d.exists()
+
+
+def test_upload_triggers_lazy_sweep(settings, tmp_path):
+    """Uploading a new file sweeps idle workdirs (lazy cleanup wiring)."""
+    app, store = _make_app(settings)
+    client = TestClient(app)
+    # Create an old, idle workdir directly.
+    old_id = "old-idle-doc"
+    d = Path(settings.work_dir, old_id)
+    d.mkdir(parents=True)
+    (d / "stale.docx").write_bytes(b"x")
+    ancient = time.time() - (settings.work_ttl_seconds + 60)
+    os.utime(d, (ancient, ancient))
+    assert d.exists()
+    # Uploading a new file should sweep the stale one away.
+    client.post("/files", files={"file": ("new.docx", b"y", "application/octet-stream")})
+    assert not d.exists(), "lazy sweep on upload should have removed the idle workdir"
+
+
+def test_default_work_ttl_is_48h():
+    """Default TTL is 48 hours (172800s), not the old 1h, so long sessions
+    don't lose documents mid-conversation."""
+    from officecli_mcp.config import Settings
+    # Construct with no env override (Settings reads env; ensure unset).
+    import os as _os
+    saved = _os.environ.pop("OFFICECLI_MCP_WORK_TTL_SECONDS", None)
+    try:
+        assert Settings().work_ttl_seconds == 48 * 60 * 60
+    finally:
+        if saved is not None:
+            _os.environ["OFFICECLI_MCP_WORK_TTL_SECONDS"] = saved
+
+
 def test_stage_asset_writes_into_target_workdir(settings):
     from officecli_mcp.files import FileStore
 
