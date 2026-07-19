@@ -414,3 +414,24 @@ async def test_get_docstring_advertises_size_and_format(mcp_server):
     # Must advertise that it returns position/size/format.
     assert "size" in desc or "width" in desc or "position" in desc, get_tool.description
     assert "json" in desc, get_tool.description  # --json gives structured format
+
+
+async def test_batch_docstring_has_exact_schema(mcp_server):
+    """The model kept guessing officecli_batch's JSON schema and failing (tried
+    cmd+prop+selector, then command+props-list+selector - all wrong). The real
+    schema: command+parent(add)/path(set,remove)+props-as-a-KEY-VALUE-MAP (not
+    a list of 'k=v' like add/set). The docstring must state this verbatim and
+    show a working example, or the model will keep guessing."""
+    mcp, _ = mcp_server
+    async with create_connected_server_and_client_session(mcp) as session:
+        await session.initialize()
+        tools = await session.list_tools()
+    b = next(t for t in tools.tools if t.name == "officecli_batch")
+    desc = b.description or ""
+    # The two field names the model got wrong.
+    assert "parent" in desc.lower(), desc
+    assert "command" in desc.lower(), desc
+    # The critical gotcha: props is a map, not a list. Say so explicitly.
+    assert "map" in desc.lower(), desc
+    # A concrete working example must be present.
+    assert '"command":"add"' in desc.replace(" ", ""), desc

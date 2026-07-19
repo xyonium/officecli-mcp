@@ -51,7 +51,10 @@ def build_mcp(
             "BATCH PROPS: officecli_set and officecli_add take prop as a LIST of "
             "'key=value' - pass every property for one element in a SINGLE call "
             "(e.g. prop=[\"x=2cm\",\"y=4cm\",\"width=21cm\",\"height=5cm\"]), never "
-            "one call per property. "
+            "one call per property. officecli_batch is DIFFERENT: each item uses "
+            "\"command\", \"parent\" (for add) or \"path\" (for set/remove), and "
+            "\"props\" as a key->value MAP {\"x\":\"1cm\"} - see its docstring for "
+            "the exact schema and copy the example verbatim. "
             "Selectors are officecli DOM/CSS paths like /slide[1] or /body/p[2]; run "
             "officecli_view_annotated or officecli_view_outline to discover them. "
             "ASSETS: to insert an image or import CSV, first call `officecli_file` "
@@ -180,13 +183,17 @@ def build_mcp(
 
     @mcp.tool(annotations=_WRITE)
     def officecli_add(file_id: str, selector: str, type: str, prop: list[str] | None = None) -> str:
-        """Add an element. selector=/ for top-level (e.g. add a slide with type=slide).
+        """Add an element under selector (the PARENT). selector=/ adds a slide.
 
-        prop is a list of 'key=value' (e.g. ["src=kimi.png","width=5in"] for a picture).
-        For a picture, src= MUST be a staged asset filename - never a URL or an
-        OpenWebUI /api/v1/files/ path (officecli's SSRF guard blocks internal
-        addresses). Call officecli_file(action="stage") first to drop the asset
-        into the document's workdir and get the filename.
+        type: slide | shape | text | textbox | picture | paragraph | run | ...
+        prop: a LIST of 'key=value' strings, e.g. ["x=1cm","y=1cm","width=5cm"].
+        Pass all props in one call. (NOTE: officecli_batch uses "props" as a
+        key->value MAP instead - different shape, do not mix them up.)
+
+        Picture: src= MUST be a staged asset filename (call officecli_file
+        action="stage" first) - never a URL or /api/v1/files/ path (SSRF guard
+        blocks it). A picture stretches to exactly the width/height you give -
+        no crop/fit - so generate images in the target aspect ratio.
         """
         _reject_url_src(prop)
         argv = ["add", "{path}", selector, "--type", type]
@@ -239,7 +246,24 @@ def build_mcp(
 
     @mcp.tool(annotations=_WRITE)
     def officecli_batch(file_id: str, commands_json: str) -> str:
-        """Run many commands (JSON array) in one open/save cycle."""
+        """Run many commands in one open/save cycle. commands_json is a JSON
+        ARRAY of objects. Default is ATOMIC: if any item fails, nothing is
+        applied (use only when you want all-or-nothing).
+
+        Each item's "command" is the bare verb (add/set/remove/move/swap/get).
+        Fields are SIBLINGS of "command" - DIFFERENT from officecli_add/set:
+          - "parent": add target (e.g. "/slide[1]"). NOT "selector".
+          - "path": set/remove/get target (e.g. "/slide[1]/shape[1]").
+          - "type": element type for add (slide/shape/text/picture/...).
+          - "props": a key->value MAP ({"x":"1cm","bold":"true"}), NOT a list
+            of "k=v" strings. (add/set tools use a list; batch uses a map.)
+          - "to"/"after"/"before": move. "path2": swap's second path.
+
+        Example (copy verbatim, edit values):
+        [{"command":"add","parent":"/","type":"slide"},
+         {"command":"add","parent":"/slide[1]","type":"shape","props":{"x":"1cm","y":"1cm","width":"5cm","height":"3cm","fill":"#5B7CFA"}},
+         {"command":"set","path":"/slide[1]/shape[1]","props":{"line":"none"}}]
+        """
         return _run_text(runner, file_id, ["batch", "{path}", "--commands", commands_json])
 
     @mcp.tool(annotations=_WRITE)
