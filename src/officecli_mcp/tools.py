@@ -24,6 +24,33 @@ def _err(msg: str) -> str:
     return f"ERROR: {msg}"
 
 
+def _downscale_png(png: bytes, max_edge: int) -> bytes:
+    """Clamp a PNG's longest edge to max_edge px (aspect preserved).
+
+    Screenshots go straight into the model context as base64, so unbounded
+    resolution = unbounded tokens. max_edge=0 disables resizing. A corrupt
+    image is returned unchanged (logged) rather than failing the tool call.
+    """
+    if max_edge <= 0:
+        return png
+    import io
+
+    from PIL import Image as PILImage
+
+    try:
+        with PILImage.open(io.BytesIO(png)) as im:
+            w, h = im.size
+            if max(w, h) <= max_edge:
+                return png
+            im.thumbnail((max_edge, max_edge))
+            buf = io.BytesIO()
+            im.save(buf, format="PNG")
+            return buf.getvalue()
+    except Exception:  # noqa: BLE001
+        log.warning("screenshot downscale failed; returning original image", exc_info=True)
+        return png
+
+
 def build_mcp(
     runner: OfficeRunner,
     file_store: FileStore,
@@ -32,6 +59,7 @@ def build_mcp(
     transport_security: TransportSecuritySettings | None = None,
     view_html_mode: int = 2,
     view_html_max_chars: int = 8000,
+    screenshot_max_edge: int = 1024,
 ) -> FastMCP:
     mcp = FastMCP(
         "officecli-mcp",
@@ -131,7 +159,7 @@ def build_mcp(
         res = _run(runner, file_id, argv)
         if res.image_path is None:
             raise ToolError("screenshot produced no image file")
-        png = runner.read_image(res.image_path)
+        png = _downscale_png(runner.read_image(res.image_path), screenshot_max_edge)
         return Image(data=png, format="png")
 
     @mcp.tool(annotations=_READ_ONLY)

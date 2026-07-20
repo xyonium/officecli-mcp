@@ -504,6 +504,105 @@ async def test_get_docstring_advertises_size_and_format(mcp_server):
     assert "json" in desc, get_tool.description  # --json gives structured format
 
 
+def _make_png(width: int, height: int) -> bytes:
+    import io
+
+    from PIL import Image as PILImage
+
+    buf = io.BytesIO()
+    PILImage.new("RGB", (width, height), (90, 120, 200)).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _png_size(png: bytes) -> tuple[int, int]:
+    import io
+
+    from PIL import Image as PILImage
+
+    with PILImage.open(io.BytesIO(png)) as im:
+        return im.size
+
+
+async def test_screenshot_downscales_to_max_edge(settings, tmp_path):
+    """A 2000x1000 screenshot with max_edge=1024 comes back 1024x512."""
+    import base64
+    import os
+
+    from officecli_mcp import tools as tools_mod
+    from officecli_mcp.files import FileStore
+    from officecli_mcp.runner import OfficeRunner
+
+    store = FileStore(work_dir=settings.work_dir, ttl_seconds=3600)
+    png = _make_png(2000, 1000)
+    stub = tmp_path / "officecli"
+    stub.write_text(
+        "#!/bin/sh\n"
+        'while [ $# -gt 0 ]; do\n'
+        '  if [ "$1" = "-o" ]; then shift; cp "$SCREENSHOT_SRC" "$1"; fi\n'
+        "  shift\n"
+        "done\n"
+    )
+    stub.chmod(0o755)
+    src = tmp_path / "src.png"
+    src.write_bytes(png)
+    os.environ["SCREENSHOT_SRC"] = str(src)
+    try:
+        runner = OfficeRunner(binary_path=str(stub), file_store=store)
+        mcp = tools_mod.build_mcp(runner=runner, file_store=store, screenshot_max_edge=1024)
+        info = store.put("d.pptx", b"pptx-bytes")
+        async with create_connected_server_and_client_session(mcp) as session:
+            await session.initialize()
+            res = await session.call_tool("officecli_view_screenshot", {"file_id": info["file_id"]})
+        images = [c for c in res.content if getattr(c, "type", None) == "image"]
+        assert images, f"expected an image content block, got {res.content!r}"
+        assert _png_size(base64.b64decode(images[0].data)) == (1024, 512)
+    finally:
+        os.environ.pop("SCREENSHOT_SRC", None)
+
+
+async def test_screenshot_max_edge_zero_disables_resize(settings, tmp_path):
+    """max_edge=0 returns the original PNG bytes untouched."""
+    import base64
+    import os
+
+    from officecli_mcp import tools as tools_mod
+    from officecli_mcp.files import FileStore
+    from officecli_mcp.runner import OfficeRunner
+
+    store = FileStore(work_dir=settings.work_dir, ttl_seconds=3600)
+    png = _make_png(2000, 1000)
+    stub = tmp_path / "officecli"
+    stub.write_text(
+        "#!/bin/sh\n"
+        'while [ $# -gt 0 ]; do\n'
+        '  if [ "$1" = "-o" ]; then shift; cp "$SCREENSHOT_SRC" "$1"; fi\n'
+        "  shift\n"
+        "done\n"
+    )
+    stub.chmod(0o755)
+    src = tmp_path / "src.png"
+    src.write_bytes(png)
+    os.environ["SCREENSHOT_SRC"] = str(src)
+    try:
+        runner = OfficeRunner(binary_path=str(stub), file_store=store)
+        mcp = tools_mod.build_mcp(runner=runner, file_store=store, screenshot_max_edge=0)
+        info = store.put("d.pptx", b"pptx-bytes")
+        async with create_connected_server_and_client_session(mcp) as session:
+            await session.initialize()
+            res = await session.call_tool("officecli_view_screenshot", {"file_id": info["file_id"]})
+        images = [c for c in res.content if getattr(c, "type", None) == "image"]
+        assert base64.b64decode(images[0].data) == png
+    finally:
+        os.environ.pop("SCREENSHOT_SRC", None)
+
+
+def test_downscale_png_corrupt_input_returns_original():
+    from officecli_mcp.tools import _downscale_png
+
+    garbage = b"not-a-png"
+    assert _downscale_png(garbage, 1024) == garbage
+
+
 async def test_batch_docstring_has_exact_schema(mcp_server):
     """The model kept guessing officecli_batch's JSON schema and failing (tried
     cmd+prop+selector, then command+props-list+selector - all wrong). The real
