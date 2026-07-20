@@ -27,4 +27,13 @@ def settings(tmp_path: Path) -> object:
         officecli_sha256="",
         api_key="",
         allowed_extensions=("docx", "xlsx", "pptx"),
+        view_html_mode=2,
+        view_html_max_chars=8000,
+        screenshot_max_edge=1024,
+        owui_sync=True,
+        owui_url="",
+        owui_api_key="",
+        owui_tool_id="officecli_file",
+        dns_rebinding_protection=True,
+        allowed_hosts=("127.0.0.1:*", "localhost:*", "[::1]:*"),
     )

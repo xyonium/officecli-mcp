@@ -157,4 +157,19 @@ def build_app(settings: Settings):
     app.state.settings = settings
     app.state.file_store = file_store
     app.state.mcp = mcp
+
+    # Best-effort: push the regenerated officecli_file shim into OpenWebUI.
+    # Runs in a thread so boot is never blocked by OpenWebUI being down.
+    if getattr(settings, "owui_sync", True) and getattr(settings, "owui_api_key", ""):
+        import threading
+
+        from officecli_mcp.shim_sync import sync_shim
+
+        def _sync() -> None:
+            import anyio
+
+            anyio.run(sync_shim, settings, mcp)
+
+        threading.Thread(target=_sync, daemon=True).start()
+
     return app
