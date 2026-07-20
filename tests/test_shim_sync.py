@@ -57,6 +57,7 @@ async def test_sync_creates_tool_when_missing(settings, mcp_server, monkeypatch)
 
     body = json.loads(rec[1]["body"])
     assert body["id"] == "officecli_file"
+    assert body["name"] == "OfficeCLI"  # readable display name on create
     assert body["content"].startswith("# officecli-shim-rev: ")
     # ToolForm.access_grants is `list[dict | None] = None` in NAME ONLY - the
     # real API 422s on null ("Input should be a valid list"), verified live
@@ -109,6 +110,7 @@ async def test_sync_updates_stale_tool_preserving_access_grants(settings, mcp_se
 
     body = json.loads(rec[1]["body"])
     assert body["access_grants"] == existing["access_grants"]  # preserved
+    assert body["name"] == "Office CLI"  # user-set display name preserved on update
     assert not body["content"].startswith("# officecli-shim-rev: stale")
 
 

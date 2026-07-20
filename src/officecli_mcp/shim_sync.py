@@ -54,7 +54,9 @@ async def sync_shim(settings, mcp) -> None:
                     "/api/v1/tools/create",
                     json={
                         "id": tool_id,
-                        "name": "officecli_file",
+                        # Display name; the model calls methods as
+                        # {tool_id}.{method}, so id stays officecli_file.
+                        "name": "OfficeCLI",
                         "content": content,
                         "meta": {
                             "description": (
