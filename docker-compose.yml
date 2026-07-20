@@ -21,21 +21,15 @@ services:
       # OFFICECLI_MCP_DNS_REBINDING_PROTECTION: "1"  # default on; "0" disables the Host/Origin guard
       # OFFICECLI_MCP_API_KEY: set-to-lock-down-the-http-surface
       # OFFICECLI_SHA256: optional-pin
-      # Auto-create/update the officecli_file tool in OpenWebUI on boot. The
-      # repo .env holds OWUI_ADMIN_KEY (an OpenWebUI ADMIN API key from
-      # Settings > Account); .env is gitignored and compose loads it
-      # automatically. Without the key, sync is skipped (manual paste mode).
-      OFFICECLI_MCP_OWUI_URL: "http://open-webui:8080"
-      OFFICECLI_MCP_OWUI_API_KEY: "${OWUI_ADMIN_KEY:-}"
+      # Optional: auto-create/update the officecli_file tool in OpenWebUI on
+      # boot (shim self-sync). Requires an OpenWebUI ADMIN API key and network
+      # reachability to OpenWebUI — see docs/deployment-self-sync.md for a
+      # worked example (env wiring + joining OpenWebUI's network). Without
+      # these, sync is skipped (manual paste mode).
+      # OFFICECLI_MCP_OWUI_URL: "http://open-webui:8080"
+      # OFFICECLI_MCP_OWUI_API_KEY: "sk-..."   # admin API key - keep secret
       # OFFICECLI_MCP_SCREENSHOT_MAX_EDGE: "1024"
     restart: unless-stopped
-    networks:
-      - default
-      # Join OpenWebUI's compose network so this service can reach
-      # http://open-webui:8080 for the shim self-sync (and OpenWebUI can reach
-      # us here as http://officecli-mcp:8765). Change the name if your
-      # OpenWebUI project network differs (docker network ls).
-      - open-webui-nogpu_default
 
   # Reference: OpenWebUI connects to http://officecli-mcp:8765/mcp (native MCP,
   # streamable-HTTP) and POSTs uploads to http://officecli-mcp:8765/files via
@@ -44,7 +38,3 @@ services:
 volumes:
   officecli-data:
   officecli-work:
-
-networks:
-  open-webui-nogpu_default:
-    external: true
