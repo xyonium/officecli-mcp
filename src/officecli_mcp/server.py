@@ -83,6 +83,76 @@ def build_app(settings: Settings):
 
         return JSONResponse({"status": "ok"})
 
+    # Generic manifest + dispatch so the OpenWebUI native tool can drive every
+    # officecli_* tool over plain HTTP. These go through the SAME FastMCP
+    # request handlers as /mcp, so behavior (validation, errors, content
+    # blocks) is identical to the MCP path.
+    import mcp.types as mcp_types
+
+    from officecli_mcp.files import _check_api_key
+    from officecli_mcp.manifest import get_manifest
+
+    @mcp.custom_route("/tools", methods=["GET"])
+    async def _tools_manifest(request):
+        err = _check_api_key(request, settings.api_key)
+        if err:
+            return err
+        from starlette.responses import JSONResponse
+
+        return JSONResponse(await get_manifest(mcp))
+
+    @mcp.custom_route("/tools/call", methods=["POST"])
+    async def _tools_call(request):
+        err = _check_api_key(request, settings.api_key)
+        if err:
+            return err
+        import base64 as _b64
+
+        from starlette.responses import JSONResponse
+
+        try:
+            payload = await request.json()
+            name = payload["name"]
+            arguments = payload.get("arguments") or {}
+        except Exception as e:  # noqa: BLE001
+            return JSONResponse({"error": f"bad request: {e}"}, status_code=400)
+
+        list_handler = mcp._mcp_server.request_handlers[mcp_types.ListToolsRequest]
+        listed = await list_handler(mcp_types.ListToolsRequest())
+        if isinstance(listed, mcp_types.ServerResult):
+            listed = listed.root
+        if name not in {t.name for t in listed.tools}:
+            return JSONResponse({"error": f"unknown tool '{name}'"}, status_code=404)
+
+        call_handler = mcp._mcp_server.request_handlers[mcp_types.CallToolRequest]
+        req = mcp_types.CallToolRequest(
+            method="tools/call",
+            params=mcp_types.CallToolRequestParams(name=name, arguments=arguments),
+        )
+        try:
+            result = await call_handler(req)
+        except Exception as e:  # noqa: BLE001
+            # Validation/execution errors surface as content, not HTTP errors,
+            # so the model can read and self-correct (same as the MCP path).
+            return JSONResponse(
+                {"content": [{"type": "text", "text": str(e)}], "isError": True}
+            )
+        if isinstance(result, mcp_types.ServerResult):
+            result = result.root
+        content = []
+        for block in getattr(result, "content", []) or []:
+            if getattr(block, "type", None) == "image":
+                content.append(
+                    {
+                        "type": "image",
+                        "data": block.data if isinstance(block.data, str) else _b64.b64encode(block.data).decode(),
+                        "mimeType": getattr(block, "mimeType", "image/png"),
+                    }
+                )
+            elif hasattr(block, "text"):
+                content.append({"type": "text", "text": block.text})
+        return JSONResponse({"content": content, "isError": bool(getattr(result, "isError", False))})
+
     app = mcp.streamable_http_app()
     app.state.settings = settings
     app.state.file_store = file_store
