@@ -49,6 +49,7 @@ def build_app(settings: Settings):
         transport_security=transport_security,
         view_html_mode=getattr(settings, "view_html_mode", 2),
         view_html_max_chars=getattr(settings, "view_html_max_chars", 8000),
+        screenshot_max_edge=getattr(settings, "screenshot_max_edge", 1024),
     )
 
     # Custom HTTP routes share the same process/workdir as the MCP tools.
