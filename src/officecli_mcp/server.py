@@ -11,7 +11,7 @@ import logging
 
 from officecli_mcp import binary
 from officecli_mcp.config import Settings
-from officecli_mcp.files import FileStore, delete, download, upload
+from officecli_mcp.files import FileStore, delete, download, stage, upload
 from officecli_mcp.runner import OfficeRunner
 from officecli_mcp.tools import build_mcp
 
@@ -47,6 +47,8 @@ def build_app(settings: Settings):
         file_store=file_store,
         host=settings.host,
         transport_security=transport_security,
+        view_html_mode=getattr(settings, "view_html_mode", 2),
+        view_html_max_chars=getattr(settings, "view_html_max_chars", 8000),
     )
 
     # Custom HTTP routes share the same process/workdir as the MCP tools.
@@ -55,6 +57,12 @@ def build_app(settings: Settings):
         request.app.state.settings = settings
         request.app.state.file_store = file_store
         return await upload(request)
+
+    @mcp.custom_route("/files/stage", methods=["POST"])
+    async def _stage(request):
+        request.app.state.settings = settings
+        request.app.state.file_store = file_store
+        return await stage(request)
 
     @mcp.custom_route("/files/{file_id}", methods=["GET"])
     async def _download(request):
