@@ -117,6 +117,10 @@ def build_app(settings: Settings):
         except Exception as e:  # noqa: BLE001
             return JSONResponse({"error": f"bad request: {e}"}, status_code=400)
 
+        # Private API: mcp._mcp_server.request_handlers is a FastMCP 1.x internal.
+        # There is no public alternative for listing/calling tools by name from
+        # custom routes. If an SDK upgrade breaks /tools or /tools/call, check
+        # whether FastMCP has added a public handler API upstream.
         list_handler = mcp._mcp_server.request_handlers[mcp_types.ListToolsRequest]
         listed = await list_handler(mcp_types.ListToolsRequest())
         if isinstance(listed, mcp_types.ServerResult):
@@ -124,6 +128,7 @@ def build_app(settings: Settings):
         if name not in {t.name for t in listed.tools}:
             return JSONResponse({"error": f"unknown tool '{name}'"}, status_code=404)
 
+        # Private API (same rationale as list_handler above).
         call_handler = mcp._mcp_server.request_handlers[mcp_types.CallToolRequest]
         req = mcp_types.CallToolRequest(
             method="tools/call",

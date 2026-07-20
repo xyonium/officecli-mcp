@@ -43,16 +43,19 @@ The `OFFICECLI_MCP_OWUI_API_KEY` is sensitive -- it grants tool create/update ac
 
 ```
 OpenWebUI (pod A)                         officecli-mcp (pod B)
-┌──────────────────────────────┐          ┌─────────────────────────────────┐
-│ LLM ──► native MCP client    │  HTTP    │ FastMCP (streamable-HTTP)       │
-│         (streamable-HTTP) ────┼──────────►  tools: create, view_html,     │
-│                                │          │         view_screenshot, edit… │
+┌──────────────────────────────┐          ┌─────────────────────────────────────────────────┐
+│ LLM ──► officecli_file       │  HTTP    │ HTTP /tools/call (dispatch)     │
+│         (native tool) ───────┼─────────►  POST {"name","arguments"}     │
+│                                │          │   → same handlers as /mcp     │
 │ Native Tool "officecli_file"  │          │                                 │
 │   reads __files__, fetches    │  HTTP    │ HTTP /files  (upload → file_id)│
-│   bytes, POSTs ───────────────┼──────────► /files/{id} (download)        │
+│   bytes, POSTs ──────────────┼─────────► /files/{id} (download)        │
 │   returns file_id to LLM      │          │                                 │
+│                                │          │                                 │
+│ LLM ──► MCP client            │          │ FastMCP (streamable-HTTP)       │
+│         (debugging only) ──────┼─────────►  tools: create, view_html…    │
 └──────────────────────────────┘          │ officecli binary (auto-pulled) │
-                                          └─────────────────────────────────┘
+                                          └─────────────────────────────────────────────────┘
 ```
 
 - The LLM never sees raw bytes — only a short `file_id` handle.
@@ -128,11 +131,13 @@ All MCP tools are prefixed `officecli_` and take a `file_id` handle (returned by
 
 ## `officecli_file` actions
 
-The native tool (installed in Quick start step 3) takes one `action`:
+The native tool (installed in Quick start step 3) takes these `action` values:
 
 - `action="upload"` - push chat-attached office docs into officecli-mcp; returns a `file_id` to pass to the `officecli_*` MCP tools.
 - `action="download"` - pull a finished doc back out into OpenWebUI storage and return a browser-reachable download URL. Also emits a `files` event so OpenWebUI shows a **downloadable file chip** on the assistant message (no need to copy the URL out of the tool call).
 - `action="stage"` - drop a generated/uploaded image or CSV into a document's workdir; returns an asset filename for `officecli_add type=picture` (`src=<asset>`) or `officecli_import` (`source=<asset>`). Pictures must be staged first - officecli's SSRF guard blocks passing a URL as `src=`.
+- `action="run"` - call ANY document tool by name: pass `tool=<name>` and `arguments=<JSON object as a STRING>`. The action dispatches to the same FastMCP handlers as the `/mcp` endpoint, so validation and error handling are identical.
+- `action="tools"` - fetch the live tool manifest from `/tools`. Use this as a fallback if the pasted shim file is stale; returns the current tool list, signatures, and descriptions so the model can construct correct calls.
 
 ## License
 

@@ -108,7 +108,7 @@ AVAILABLE TOOLS for action="run" (full docs; auto-synced from the server):
 
 HOW TO CALL action="run": pass tool=<name> and arguments=<JSON object as a
 STRING>. Example: officecli_file(action="run", tool="officecli_set",
-arguments="{{\"file_id\":\"abc123\",\"selector\":\"/slide[1]/shape[1]\",\"prop\":[\"x=2cm\",\"width=21cm\"]}}")
+arguments="{\"file_id\":\"abc123\",\"selector\":\"/slide[1]/shape[1]\",\"prop\":[\"x=2cm\",\"width=21cm\"]}")
 
 Auth model: file actions use the CURRENT user's credentials forwarded from the
 injected __request__ (no stored key; works as a shared Public tool).
