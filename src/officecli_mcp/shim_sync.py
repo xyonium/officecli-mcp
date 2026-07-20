@@ -50,7 +50,7 @@ async def sync_shim(settings, mcp) -> None:
         async with _client(url, key) as client:
             resp = await client.get(f"/api/v1/tools/id/{tool_id}")
             if resp.status_code == 404:
-                await client.post(
+                resp = await client.post(
                     "/api/v1/tools/create",
                     json={
                         "id": tool_id,
@@ -62,9 +62,13 @@ async def sync_shim(settings, mcp) -> None:
                                 "officecli-mcp (upload/download/stage/run/tools)."
                             )
                         },
-                        "access_grants": None,
+                        # ToolForm.access_grants looks Optional but the API
+                        # 422s on null ("Input should be a valid list") -
+                        # verified live. [] = private (owner/admin only).
+                        "access_grants": [],
                     },
                 )
+                resp.raise_for_status()  # never log success on a failed create
                 log.info("shim self-sync: created OpenWebUI tool '%s'", tool_id)
                 return
             resp.raise_for_status()
@@ -85,7 +89,10 @@ async def sync_shim(settings, mcp) -> None:
                             "officecli-mcp (upload/download/stage/run/tools)."
                         ),
                     },
-                    "access_grants": existing.get("access_grants"),
+                    # Preserve the tool's visibility (public stays public).
+                    # GET may echo null for a private tool; the API 422s on
+                    # null, so fall back to an empty list.
+                    "access_grants": existing.get("access_grants") or [],
                 },
             )
             resp.raise_for_status()

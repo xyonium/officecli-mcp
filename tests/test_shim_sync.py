@@ -58,6 +58,34 @@ async def test_sync_creates_tool_when_missing(settings, mcp_server, monkeypatch)
     body = json.loads(rec[1]["body"])
     assert body["id"] == "officecli_file"
     assert body["content"].startswith("# officecli-shim-rev: ")
+    # ToolForm.access_grants is `list[dict | None] = None` in NAME ONLY - the
+    # real API 422s on null ("Input should be a valid list"), verified live
+    # against OpenWebUI. Create must send a list.
+    assert body["access_grants"] == []
+
+
+async def test_sync_create_422_does_not_log_success(settings, mcp_server, monkeypatch, caplog):
+    """Regression (seen live): create POST 422'd (null access_grants) and the
+    sync logged 'created OpenWebUI tool' anyway - the create response status
+    was never checked. A failed create must be visible as a failure, never
+    logged as success."""
+    from officecli_mcp import shim_sync
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/create"):
+            return httpx.Response(
+                422, json={"detail": [{"type": "list_type", "loc": ["body", "access_grants"]}]}
+            )
+        return httpx.Response(404, json={"detail": "not found"})
+
+    monkeypatch.setattr(shim_sync, "_client", lambda url, key: httpx.AsyncClient(
+        base_url=url, transport=httpx.MockTransport(handler),
+        headers={"Authorization": f"Bearer {key}"}))
+    with caplog.at_level("WARNING"):
+        await shim_sync.sync_shim(_settings(settings), mcp_server)  # must not raise
+    messages = [r.message.lower() for r in caplog.records]
+    assert any("shim self-sync failed" in m for m in messages)
+    assert not any("created openwebui tool" in m for m in messages)
 
 
 async def test_sync_updates_stale_tool_preserving_access_grants(settings, mcp_server, monkeypatch):
@@ -84,14 +112,39 @@ async def test_sync_updates_stale_tool_preserving_access_grants(settings, mcp_se
     assert not body["content"].startswith("# officecli-shim-rev: stale")
 
 
+async def test_sync_update_with_null_stored_grants_sends_empty_list(settings, mcp_server, monkeypatch):
+    """If the GET echoes access_grants=null (older OpenWebUI for a private
+    tool), the update payload must still send a list - the API 422s on null."""
+    from officecli_mcp import shim_sync
+
+    existing = {
+        "id": "officecli_file",
+        "name": "Office CLI",
+        "content": "# officecli-shim-rev: stale\nold",
+        "meta": {"description": "old"},
+        "access_grants": None,
+    }
+    rec: list[dict] = []
+    monkeypatch.setattr(shim_sync, "_client", lambda url, key: httpx.AsyncClient(
+        base_url=url, transport=_transport(rec, existing=existing),
+        headers={"Authorization": f"Bearer {key}"}))
+    await shim_sync.sync_shim(_settings(settings), mcp_server)
+    import json
+
+    body = json.loads(rec[1]["body"])
+    assert body["access_grants"] == []
+
+
 async def test_sync_noop_when_revision_matches(settings, mcp_server, monkeypatch):
     from officecli_mcp import shim_sync
     from officecli_mcp.manifest import get_manifest
     from officecli_mcp.shim import render_shim
 
     current = render_shim(await get_manifest(mcp_server))
+    # The GET response for a private tool carries access_grants=[] (the API
+    # echoes a list); the noop path must work regardless.
     existing = {"id": "officecli_file", "name": "t", "content": current,
-                "meta": {"description": "d"}, "access_grants": None}
+                "meta": {"description": "d"}, "access_grants": []}
     rec: list[dict] = []
     monkeypatch.setattr(shim_sync, "_client", lambda url, key: httpx.AsyncClient(
         base_url=url, transport=_transport(rec, existing=existing),
