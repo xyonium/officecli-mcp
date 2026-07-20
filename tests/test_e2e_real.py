@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import os
 from pathlib import Path
 
@@ -48,18 +49,24 @@ def test_create_view_html_screenshot_delete_flow(app):
                 "officecli_create", {"file_id": seed_id, "name": "deck.pptx", "type": "pptx"}
             )
             texts = [c.text for c in r.content if hasattr(c, "text")]
-            new_id = texts[0].strip()
+            create_out = "\n".join(texts)
+            new_id = create_out.splitlines()[0].strip()
             assert not new_id.startswith("ERROR"), texts
+            # The real binary prints slide dimensions on create; the tool must
+            # surface them so the model can size objects to the page.
+            assert "slideWidth" in create_out, create_out
+            assert "slideHeight" in create_out, create_out
 
             # Add a slide so screenshot has a page to render (blank deck has 0 slides).
             await session.call_tool(
                 "officecli_add", {"file_id": new_id, "selector": "/", "type": "slide"}
             )
 
-            # 2. view_html -> HTML text
+            # 2. view_html -> text (default compact mode strips tags but keeps
+            # visible text like slide titles; just confirm it returned content).
             r2 = await session.call_tool("officecli_view_html", {"file_id": new_id})
             t2 = "".join(c.text for c in r2.content if hasattr(c, "text"))
-            assert "<html" in t2.lower() or "<body" in t2.lower(), t2[:200]
+            assert t2.strip(), t2[:200]
 
             # 3. view_screenshot -> base64 PNG image block
             r3 = await session.call_tool(
@@ -74,5 +81,134 @@ def test_create_view_html_screenshot_delete_flow(app):
             client.delete(f"/files/{new_id}")
             r4 = await session.call_tool("officecli_view_html", {"file_id": new_id})
             assert r4.isError
+
+    asyncio.run(run())
+
+
+def test_stage_image_into_pptx(app, tmp_path):
+    """Definition of done: stage a real PNG -> add picture -> screenshot shows it.
+
+    Mirrors the spec section 5.3 verification: stage asset, add picture with src=asset,
+    view_screenshot to confirm the image appears on the slide.
+    """
+    client = TestClient(app)
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    mcp = app.state.mcp
+
+    # 1. Seed a host workdir, then create a real deck.pptx + a slide.
+    up = client.post("/files", files={"file": ("seed.docx", b"PK", "application/octet-stream")})
+    assert up.status_code == 200
+    seed_id = up.json()["file_id"]
+
+    async def run():
+        async with create_connected_server_and_client_session(mcp) as session:
+            await session.initialize()
+            r = await session.call_tool(
+                "officecli_create", {"file_id": seed_id, "name": "deck.pptx", "type": "pptx"}
+            )
+            create_out = "\n".join(c.text for c in r.content if hasattr(c, "text"))
+            new_id = create_out.splitlines()[0].strip()
+            assert not new_id.startswith("ERROR"), new_id
+            # create surfaces slide dimensions now.
+            assert "slideWidth" in create_out, create_out
+
+            await session.call_tool(
+                "officecli_add", {"file_id": new_id, "selector": "/", "type": "slide"}
+            )
+            return new_id
+
+    new_id = asyncio.run(run())
+
+    # 2. Stage a real PNG into the deck's workdir.
+    # Use a minimal valid PNG (1x1) generated here so the test is self-contained.
+    png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+    )
+    stage = client.post(
+        "/files/stage",
+        data={"target_file_id": new_id, "filename": "kimi.png"},
+        files={"file": ("kimi.png", png, "image/png")},
+    )
+    assert stage.status_code == 200, stage.text
+    assert stage.json()["asset"] == "kimi.png"
+
+    # 3. add picture with src=kimi.png and sizing/position.
+    async def add_and_view():
+        async with create_connected_server_and_client_session(mcp) as session:
+            await session.initialize()
+            r = await session.call_tool(
+                "officecli_add",
+                {
+                    "file_id": new_id,
+                    "selector": "/slide[1]",
+                    "type": "picture",
+                    "prop": ["src=kimi.png", "width=5in", "height=3in", "x=1in", "y=1in"],
+                },
+            )
+            assert not r.isError, [c.text for c in r.content if hasattr(c, "text")]
+            # 4. view_screenshot -> image content returned (picture is on the slide).
+            r2 = await session.call_tool(
+                "officecli_view_screenshot", {"file_id": new_id, "page": 1}
+            )
+            imgs = [c for c in r2.content if getattr(c, "type", None) == "image"]
+            assert imgs, f"expected a screenshot image, got {r2.content}"
+
+    asyncio.run(add_and_view())
+
+    # 5. Download the pptx and confirm the image part is embedded.
+    dl = client.get(f"/files/{new_id}")
+    assert dl.status_code == 200
+    # A pptx with an embedded picture contains an image part (png) in the zip.
+    import io
+    import zipfile
+
+    z = zipfile.ZipFile(io.BytesIO(dl.content))
+    names = z.namelist()
+    assert any("media" in n and n.endswith(".png") for n in names), names
+
+def test_batch_with_docstring_example_schema(app):
+    """The officecli_batch docstring shows an exact JSON schema. This test runs
+    a batch built to that schema against the real binary to guarantee the
+    documented example actually works - so the model can copy it verbatim."""
+    import asyncio
+
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    client = TestClient(app)
+    mcp = app.state.mcp
+    up = client.post("/files", files={"file": ("seed.pptx", b"PK", "application/octet-stream")})
+    assert up.status_code == 200
+    seed_id = up.json()["file_id"]
+
+    async def run():
+        async with create_connected_server_and_client_session(mcp) as session:
+            await session.initialize()
+            cr = await session.call_tool(
+                "officecli_create", {"file_id": seed_id, "name": "b.pptx", "type": "pptx"}
+            )
+            new_id = "\n".join(c.text for c in cr.content if hasattr(c, "text")).splitlines()[0].strip()
+            # Schema straight from the docstring: parent for add, path for set,
+            # props as a key->value MAP.
+            cmds = json.dumps(
+                [
+                    {"command": "add", "parent": "/", "type": "slide"},
+                    {
+                        "command": "add",
+                        "parent": "/slide[1]",
+                        "type": "shape",
+                        "props": {"x": "1cm", "y": "1cm", "width": "5cm", "height": "3cm"},
+                    },
+                    {"command": "set", "path": "/slide[1]/shape[1]", "props": {"line": "none"}},
+                ]
+            )
+            r = await session.call_tool(
+                "officecli_batch", {"file_id": new_id, "commands_json": cmds}
+            )
+            out = "\n".join(c.text for c in r.content if hasattr(c, "text"))
+            assert not r.isError, out
+            # All items must succeed (atomic mode rolls back on any failure).
+            assert "3 succeeded" in out, out
+            assert "0 failed" in out, out
 
     asyncio.run(run())

@@ -4,6 +4,40 @@ An [MCP](https://modelcontextprotocol.io/) server that wraps [OfficeCLI](https:/
 
 `officecli-mcp` adds a **handle-based file layer**: an HTTP upload endpoint accepts office documents and returns a `file_id`; MCP tools then operate on that `file_id`. OfficeCLI's built-in rendering returns HTML (as text) and screenshots (as base64 images) directly to the LLM, closing the _render → look → fix_ loop.
 
+## Quick start (3 steps)
+
+You need three things talking to each other: the **officecli-mcp** container, an **OpenWebUI MCP connection**, and the **`officecli_file` native tool** (Valves). Do them in order:
+
+**1. Run the server.**
+
+```bash
+docker compose up -d   # http://localhost:8765, auto-pulls officecli on first start
+```
+
+The one env you MUST set when OpenWebUI is in a separate container is `OFFICECLI_MCP_ALLOWED_HOSTS` - the MCP SDK's DNS-rebinding guard returns **421 "Invalid Host header"** to any `Host` it isn't told about. The compose file already sets it to `officecli-mcp:8765,localhost:8765,127.0.0.1:8765`; if your service name or port differs, edit it (or set `OFFICECLI_MCP_DNS_REBINDING_PROTECTION=0` to disable the guard).
+
+**2. In OpenWebUI: add the MCP connection.**
+
+Settings -> Connections -> add `http://officecli-mcp:8765/mcp` (native MCP, streamable-HTTP). The OpenWebUI pod must be able to reach that URL (same docker network, or host port).
+
+**3. In OpenWebUI: install the `officecli_file` native tool and set its Valves.**
+
+Workspace -> Tools -> paste [`examples/openwebui_officecli_file.py`](examples/openwebui_officecli_file.py) -> make it **Public** -> attach to the model. Then set its three Valves (the values newcomers miss):
+
+| Valve | Example | What it is |
+|---|---|---|
+| `officecli_mcp_url` | `http://officecli-mcp:8765` | internal base the tool POSTs uploads/downloads to (container-reachable) |
+| `openwebui_url` | `http://open-webui:8080` | internal OpenWebUI base for API calls (container-reachable) |
+| `openwebui_browser_url` | `https://openwebui.example.com` | **browser-reachable** OpenWebUI base, prepended to download URLs the user clicks |
+
+> `openwebui_browser_url` is the one that trips people up: it must be the URL the *user's browser* uses to reach OpenWebUI (e.g. your public domain), not the internal container name - otherwise the download link the model returns can't be opened.
+
+Keep OpenWebUI API keys enabled (`ENABLE_API_KEYS=true`, the default). The tool forwards the **current user's** credentials via the injected `__request__`, so it needs no stored key and works as a shared Public tool in multi-user setups (each user only touches their own files).
+
+That's it. In a chat with that model: attach a `.docx`/`.xlsx`/`.pptx` and ask it to edit; the model calls `officecli_file(action="upload")` to get a `file_id`, edits via the `officecli_*` MCP tools, then `officecli_file(action="download")` to hand back a downloadable file chip.
+
+---
+
 ## How it works
 
 ```
@@ -37,14 +71,6 @@ OpenWebUI (pod A)                         officecli-mcp (pod B)
 
 ✅ Implemented and verified end-to-end against the real `officecli` binary (v1.0.136). See [`docs/`](docs/) for the design spec and implementation plan.
 
-## Quick start (Docker)
-
-```bash
-docker compose up -d   # serves http://localhost:8765 (auto-pulls officecli on first start)
-```
-
-OpenWebUI: add an MCP connection at `http://officecli-mcp:8765/mcp` (native MCP, streamable-HTTP), and install the `officecli_file` native tool from [`examples/openwebui_officecli_file.py`](examples/openwebui_officecli_file.py) with its Valves set (`officecli_mcp_url`, `openwebui_url`, `openwebui_browser_url`).
-
 ## Local dev
 
 ```bash
@@ -70,9 +96,11 @@ All MCP tools are prefixed `officecli_` and take a `file_id` handle (returned by
 | `officecli_view_html` | render to HTML (returned as text) |
 | `officecli_view_screenshot` | render a page to PNG (base64 image) |
 | `officecli_view_text` / `_annotated` / `_outline` / `_stats` / `_issues` | various text views |
-| `officecli_get` / `_set` / `_add` / `_remove` / `_move` / `_swap` / `_edit` | DOM edits |
+| `officecli_get` / `_set` / `_add` / `_remove` / `_move` / `_swap` / `_edit` | DOM edits (add supports `prop` list for pictures: `["src=<asset>","width=200"]`) |
+| `officecli_import` | CSV/TSV -> Excel via staged `source` filename |
 | `officecli_validate` | OpenXML schema validation |
 | `officecli_batch` | multi-command batch |
+| `officecli_file(action="stage")` | drop an image/CSV into a doc's workdir (returns `asset` name for `src=` or `source=` in other tools) |
 
 ## Configuration (env)
 
@@ -82,7 +110,9 @@ All MCP tools are prefixed `officecli_` and take a `file_id` handle (returned by
 | `OFFICECLI_MCP_PORT` | 8765 | HTTP port |
 | `OFFICECLI_MCP_DATA_DIR` | /data | where the officecli binary lives |
 | `OFFICECLI_MCP_WORK_DIR` | /work | per-file_id workdirs |
-| `OFFICECLI_MCP_WORK_TTL_SECONDS` | 3600 | idle file cleanup |
+| `OFFICECLI_MCP_WORK_TTL_SECONDS` | 172800 (48h) | idle workdir cleanup (doc + staged assets); swept lazily on each upload/stage, mtime refreshed on read |
+| `OFFICECLI_MCP_VIEW_HTML_MODE` | 2 (compact) | `officecli_view_html` output: `0`=disabled (error, use screenshot/annotated), `1`=full HTML, `2`=compact (strip styles/scripts, base64 images -> `[IMG]`, keep text structure), `3`=truncate to `VIEW_HTML_MAX_CHARS`. Compact is the default because officecli's full HTML is a large interactive page that blows the model context |
+| `OFFICECLI_MCP_VIEW_HTML_MAX_CHARS` | 8000 | truncation limit when `VIEW_HTML_MODE=3` |
 | `OFFICECLI_MCP_MAX_UPLOAD_MB` | 50 | upload size cap |
 | `OFFICECLI_VERSION` | latest | pin a release tag |
 | `OFFICECLI_SHA256` | (none) | verify binary integrity |
@@ -90,12 +120,13 @@ All MCP tools are prefixed `officecli_` and take a `file_id` handle (returned by
 | `OFFICECLI_MCP_ALLOWED_HOSTS` | `127.0.0.1:*,localhost:*,[::1]:*` | comma-separated `Host` headers the `/mcp` endpoint is reachable by (use `host:*` for any port). OpenWebUI calls `http://officecli-mcp:8765/mcp` across the docker network, so the docker service name must be listed or clients get 421 `Invalid Host header`. The compose file sets this to `officecli-mcp:8765,localhost:8765,127.0.0.1:8765`. |
 | `OFFICECLI_MCP_DNS_REBINDING_PROTECTION` | 1 | the MCP SDK DNS-rebinding / Host-header guard; set `0` to disable it entirely |
 
-## OpenWebUI setup
+## `officecli_file` actions
 
-1. Keep API keys enabled (`ENABLE_API_KEYS=true`, the default). The upload shim does **not** need a stored key - it forwards the current user's credentials via the injected `__request__`, so it works as a shared Public tool in multi-user setups (each user fetches only their own files).
-2. Install the native tool [`examples/openwebui_officecli_file.py`](examples/openwebui_officecli_file.py) (Workspace > Tools); set Valves (`officecli_mcp_url`, `openwebui_url`, `openwebui_browser_url=https://ai.savorcare.com`); make it Public; attach to the model. Use `action="upload"` to get a `file_id` from attached files, `action="download"` to get a browser-reachable download link for a finished file.
-3. Add MCP connection: `http://officecli-mcp:8765/mcp` (Settings > Connections).
-4. Ensure the OpenWebUI pod can reach the officecli-mcp pod.
+The native tool (installed in Quick start step 3) takes one `action`:
+
+- `action="upload"` - push chat-attached office docs into officecli-mcp; returns a `file_id` to pass to the `officecli_*` MCP tools.
+- `action="download"` - pull a finished doc back out into OpenWebUI storage and return a browser-reachable download URL. Also emits a `files` event so OpenWebUI shows a **downloadable file chip** on the assistant message (no need to copy the URL out of the tool call).
+- `action="stage"` - drop a generated/uploaded image or CSV into a document's workdir; returns an asset filename for `officecli_add type=picture` (`src=<asset>`) or `officecli_import` (`source=<asset>`). Pictures must be staged first - officecli's SSRF guard blocks passing a URL as `src=`.
 
 ## License
 

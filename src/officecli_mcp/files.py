@@ -15,6 +15,7 @@ from starlette.routing import Route, Router
 log = logging.getLogger(__name__)
 
 _SAFE_EXT = {"docx", "xlsx", "pptx"}
+STAGE_EXT = {"png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "csv", "tsv"}
 
 
 def _safe_filename(name: str) -> str:
@@ -47,16 +48,44 @@ class FileStore:
         (d / safe).write_bytes(data)
         return {"file_id": file_id, "filename": safe, "size": len(data), "mime": _mime(ext)}
 
+    def stage_asset(self, target_file_id: str, filename: str, data: bytes) -> dict:
+        """Write an asset (image/CSV/TSV) into an EXISTING document's workdir.
+
+        Unlike put(), this does not create a new file_id; it drops the asset
+        alongside the target document so officecli can reference it by relative
+        filename (src=kimi.png).
+        """
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        if ext not in STAGE_EXT:
+            raise ValueError(f"extension .{ext} not allowed for staging")
+        d = self._dir(target_file_id)
+        if not d.exists():
+            raise KeyError(target_file_id)
+        safe = _safe_filename(filename)
+        (d / safe).write_bytes(data)
+        return {"asset": safe, "target": target_file_id}
+
     def path_for(self, file_id: str, filename: str | None = None) -> Path:
         d = self._dir(file_id)
         if not d.exists():
             raise KeyError(file_id)
+        # Refresh the workdir mtime on access so the TTL sweep treats a
+        # frequently-read document as recently used (not just recently written).
+        try:
+            os.utime(d, None)
+        except OSError:
+            pass
         if filename:
             return d / _safe_filename(filename)
-        files = [p for p in d.iterdir() if p.is_file() and p.name != "shot.png"]
-        if not files:
+        # Return only document-extension files; staged assets (png/csv/...) and
+        # the screenshot product (shot.png) are never the document itself.
+        docs = [
+            p for p in d.iterdir()
+            if p.is_file() and p.suffix.lower().lstrip(".") in _SAFE_EXT
+        ]
+        if not docs:
             raise KeyError(file_id)
-        return files[0]
+        return docs[0]
 
     def read(self, file_id: str) -> tuple[bytes, str]:
         p = self.path_for(file_id)
@@ -134,7 +163,28 @@ async def upload(request: Request) -> Response:
         info = store.put(filename, data)
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=415)
+    store.sweep()  # lazy TTL cleanup of idle workdirs
     return JSONResponse(info)
+
+
+def _content_disposition(name: str) -> str:
+    """RFC 6266 Content-Disposition for a download filename.
+
+    Starlette encodes header values as latin-1, so a raw UTF-8 name (e.g.
+    Chinese) crashes the response with UnicodeEncodeError -> 500. For non-ASCII
+    names use the filename*=UTF-8''<percent-encoded> form (with an ASCII
+    filename= fallback). ASCII names use the plain filename= form.
+    """
+    try:
+        name.encode("latin-1")
+        return f'attachment; filename="{name}"'
+    except UnicodeEncodeError:
+        from urllib.parse import quote
+
+        pct = quote(name, safe="")
+        # ASCII fallback: strip non-ASCII so legacy clients still get a name.
+        ascii_fallback = name.encode("ascii", "ignore").decode("ascii") or "download"
+        return f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{pct}"
 
 
 async def download(request: Request) -> Response:
@@ -151,8 +201,46 @@ async def download(request: Request) -> Response:
     return Response(
         data,
         media_type="application/octet-stream",
-        headers={"content-disposition": f'attachment; filename="{name}"'},
+        headers={"content-disposition": _content_disposition(name)},
     )
+
+
+async def stage(request: Request) -> Response:
+    settings = request.app.state.settings
+    err = _check_api_key(request, settings.api_key)
+    if err:
+        return err
+    store: FileStore = request.app.state.file_store
+    content_type = request.headers.get("content-type", "")
+
+    try:
+        if "application/json" in content_type:
+            payload = await request.json()
+            target_file_id = payload["target_file_id"]
+            filename = payload["filename"]
+            data = base64.b64decode(payload["data_base64"])
+        else:
+            form = await request.form()
+            target_file_id = form["target_file_id"]
+            upload_file = form["file"]
+            filename = upload_file.filename or "asset.bin"
+            data = await upload_file.read()
+    except (KeyError, ValueError) as e:
+        return JSONResponse({"error": f"bad request: {e}"}, status_code=400)
+
+    if len(data) > settings.max_upload_mb * 1024 * 1024:
+        return JSONResponse({"error": "file too large"}, status_code=413)
+
+    try:
+        info = store.stage_asset(target_file_id, filename, data)
+    except KeyError:
+        return JSONResponse(
+            {"error": "target file_id not found or expired"}, status_code=404
+        )
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=415)
+    store.sweep()  # lazy TTL cleanup of idle workdirs
+    return JSONResponse(info)
 
 
 async def delete(request: Request) -> Response:
@@ -169,6 +257,7 @@ async def delete(request: Request) -> Response:
 def build_files_router(store: FileStore, settings) -> Router:
     routes = [
         Route("/files", upload, methods=["POST"]),
+        Route("/files/stage", stage, methods=["POST"]),
         Route("/files/{file_id}", download, methods=["GET"]),
         Route("/files/{file_id}", delete, methods=["DELETE"]),
     ]
