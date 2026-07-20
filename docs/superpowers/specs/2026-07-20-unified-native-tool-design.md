@@ -22,7 +22,7 @@ We want **one** feature: the native tool alone covers everything by HTTP-calling
 Three pieces:
 
 1. **Server: generic exec + manifest endpoints** — `GET /tools` (manifest) and `POST /tools/call` (generic dispatch) on the existing FastMCP app, next to `/files`. Tool definitions stay only in `tools.py`.
-2. **Shim: static signature, generic `run`** — `officecli_file` gains `action="run"` (forward any tool call) and `action="tools"` (fetch manifest at runtime, as a fallback). Its docstring embeds a snapshot of the tool manifest so the model sees tool names/descriptions statically.
+2. **Shim: static signature, generic `run`** — `officecli_file` gains `action="run"` (forward any tool call) and `action="tools"` (fetch manifest at runtime, as a fallback). Its docstring embeds the **full** tool manifest — every tool's complete description (the same docstring text the MCP server serves) plus a compact argument schema — so the model sees everything statically and never needs the fallback round trip.
 3. **Server: self-sync of the shim into OpenWebUI** — on startup the container regenerates the shim source (template + current manifest embedded) and pushes it to OpenWebUI's Tools API (`POST /api/v1/tools/id/{id}/update`, or `/create` if missing) using an admin API key. The embedded manifest is therefore always fresh; the model always sees the current tool list. No key configured → sync skipped, manual paste still works.
 
 ```
@@ -109,10 +109,10 @@ MCP's `officecli_view_screenshot` returns an `Image` content block, which JSON c
 The module docstring (what the model sees as the tool description) contains:
 
 1. The workflow guidance (today's FastMCP `instructions`, which the server already maintains as the single source of truth for cross-tool guidance).
-2. **An embedded manifest snapshot**: one line per tool — `name(arg, arg): first sentence of description`. Generated from `GET /tools` at sync time. This is what lets the model *see* the tools without calling `action="tools"` first.
-3. A pointer: "for exact argument schemas call action=\"tools\"; this list is auto-synced from the server".
+2. **The complete embedded manifest**: for each tool, its **full description text** (verbatim from the tool's docstring — all the guidance we already maintain: batch schema, prop list-vs-map, sizing, SSRF rules, etc.) plus a **compact argument schema** (e.g. `officecli_set(file_id: str, selector: str, prop?: list[str])`). Generated from `GET /tools` at sync time.
+3. A pointer: "call tools via action=\"run\"; this manifest is auto-synced from the server".
 
-The embedded snapshot is deliberately **short** (name + args + one line): full schemas live server-side, fetchable via `action="tools"` when the model needs them.
+Because the sync pushes the **full** descriptions, the model never needs `action="tools"` for understanding — that action remains only as a fallback (e.g. sync disabled / manual paste gone stale). Current size is small enough for this to be free: ~5.4K chars of docstrings today, ~3K tokens total with schemas. `action="tools"` returns the same full manifest JSON (with complete `inputSchema`) for cases where structured introspection is wanted.
 
 ## 3. Server: shim self-sync into OpenWebUI
 
@@ -120,9 +120,9 @@ New module `src/officecli_mcp/shim_sync.py`, invoked from `build_app` (best-effo
 
 ### Shim generation
 
-- The shim source is a **template** (`src/officecli_mcp/shim_template.py`, also copied to `examples/openwebui_officecli_file.py` for manual installs) with a placeholder block where the manifest snapshot + revision stamp go:
+- The shim source is a **template** (`src/officecli_mcp/shim_template.py`, also copied to `examples/openwebui_officecli_file.py` for manual installs) with a placeholder block where the full manifest + revision stamp go:
   - First line of the file: `# officecli-shim-rev: <revision>` where `<revision>` is the manifest sha1 from §1.
-  - The docstring's manifest section is generated from the current tool list.
+  - The docstring's manifest section is generated from the current tool list (full descriptions + compact schemas, §2).
 - Because generation is deterministic, comparing revisions = comparing embedded stamps.
 
 ### Sync flow (on container start, when configured)
