@@ -21,6 +21,10 @@ services:
       # OFFICECLI_MCP_DNS_REBINDING_PROTECTION: "1"  # default on; "0" disables the Host/Origin guard
       # OFFICECLI_MCP_API_KEY: set-to-lock-down-the-http-surface
       # OFFICECLI_SHA256: optional-pin
+      # Optional: auto-create/update the officecli_file tool in OpenWebUI.
+      # OFFICECLI_MCP_OWUI_URL: "http://open-webui:8080"
+      # OFFICECLI_MCP_OWUI_API_KEY: "sk-..."   # admin API key - keep secret
+      # OFFICECLI_MCP_SCREENSHOT_MAX_EDGE: "1024"
     restart: unless-stopped
 
   # Reference: OpenWebUI connects to http://officecli-mcp:8765/mcp (native MCP,

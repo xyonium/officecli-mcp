@@ -84,7 +84,6 @@ def test_create_view_html_screenshot_delete_flow(app):
 
     asyncio.run(run())
 
-
 def test_stage_image_into_pptx(app, tmp_path):
     """Definition of done: stage a real PNG -> add picture -> screenshot shows it.
 
@@ -212,3 +211,55 @@ def test_batch_with_docstring_example_schema(app):
             assert "0 failed" in out, out
 
     asyncio.run(run())
+
+
+# --- /tools + /tools/call e2e against the real binary ---
+
+
+@pytest.fixture
+def real_app_client(app):
+    return TestClient(app)
+
+
+def test_tools_endpoint_lists_real_tools(real_app_client):
+    resp = real_app_client.get("/tools")
+    assert resp.status_code == 200
+    names = {t["name"] for t in resp.json()["tools"]}
+    assert "officecli_create" in names
+
+
+def test_tools_call_create_and_view_roundtrip(real_app_client):
+    resp = real_app_client.post(
+        "/tools/call",
+        json={"name": "officecli_create", "arguments": {"name": "http.pptx", "type": "pptx", "file_id": "x"}},
+    )
+    body = resp.json()
+    assert body["isError"] is False
+    file_id = body["content"][0]["text"].splitlines()[0]
+    resp = real_app_client.post(
+        "/tools/call",
+        json={"name": "officecli_view_text", "arguments": {"file_id": file_id}},
+    )
+    assert resp.json()["isError"] is False
+
+
+def test_tools_call_screenshot_respects_max_edge(real_app_client):
+    import base64
+    import io
+
+    from PIL import Image
+
+    resp = real_app_client.post(
+        "/tools/call",
+        json={"name": "officecli_create", "arguments": {"name": "shot.pptx", "type": "pptx", "file_id": "x"}},
+    )
+    file_id = resp.json()["content"][0]["text"].splitlines()[0]
+    resp = real_app_client.post(
+        "/tools/call",
+        json={"name": "officecli_view_screenshot", "arguments": {"file_id": file_id}},
+    )
+    body = resp.json()
+    assert body["isError"] is False
+    img_block = next(b for b in body["content"] if b["type"] == "image")
+    with Image.open(io.BytesIO(base64.b64decode(img_block["data"]))) as im:
+        assert max(im.size) <= 1024
