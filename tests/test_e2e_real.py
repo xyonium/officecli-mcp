@@ -254,6 +254,13 @@ def test_tools_call_screenshot_respects_max_edge(real_app_client):
         json={"name": "officecli_create", "arguments": {"name": "shot.pptx", "type": "pptx", "file_id": "x"}},
     )
     file_id = resp.json()["content"][0]["text"].splitlines()[0]
+    # officecli v1.0.139 refuses to screenshot an empty deck ("--page 1 out of
+    # range (total slides: 0)"), so add a slide first.
+    resp = real_app_client.post(
+        "/tools/call",
+        json={"name": "officecli_add", "arguments": {"file_id": file_id, "selector": "/", "type": "slide"}},
+    )
+    assert resp.json()["isError"] is False
     resp = real_app_client.post(
         "/tools/call",
         json={"name": "officecli_view_screenshot", "arguments": {"file_id": file_id}},
