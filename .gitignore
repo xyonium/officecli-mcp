@@ -36,3 +36,5 @@ htmlcov/
 # Env
 .env
 .env.local
+# Local deployment overrides (machine-specific network + admin key mapping)
+docker-compose.override.yml
