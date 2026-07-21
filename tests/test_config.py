@@ -23,7 +23,7 @@ def test_new_settings_defaults(monkeypatch):
         assert s.owui_sync is True
         assert s.owui_url == ""
         assert s.owui_api_key == ""
-        assert s.owui_tool_id == "officecli_file"
+        assert s.owui_tool_id == "officecli"
     finally:
         importlib.reload(cfg)
 

@@ -25,11 +25,11 @@ Add these env vars to your docker-compose or env file (the compose file has comm
 | `OFFICECLI_MCP_OWUI_URL` | `http://open-webui:8080` | OpenWebUI internal base (for self-sync) |
 | `OFFICECLI_MCP_OWUI_API_KEY` | `sk-...` | OpenWebUI **admin** API key (for self-sync -- keep secret, use an env file or secrets, never commit) |
 
-The server auto-creates/updates the `officecli_file` native tool in OpenWebUI on boot when both vars are set. If you'd rather paste it manually, use [`examples/openwebui_officecli_file.py`](examples/openwebui_officecli_file.py) in Workspace -> Tools (set `owui_sync=0` to disable auto-sync).
+The server auto-creates/updates the `officecli` native tool in OpenWebUI on boot when both vars are set. If you'd rather paste it manually, use [`examples/openwebui_officecli_file.py`](examples/openwebui_officecli_file.py) in Workspace -> Tools (set `owui_sync=0` to disable auto-sync).
 
 **3. In OpenWebUI: attach the tool and chat.**
 
-Find the auto-created `officecli_file` tool in Workspace -> Tools -> make it **Public** -> attach it to a model. No MCP connection is required -- the tool drives officecli-mcp over plain HTTP (`/tools/call`). The MCP streamable-HTTP endpoint (`/mcp`) stays available for debugging but is no longer the primary path.
+Find the auto-created `officecli` tool (display name **OfficeCLI**) in Workspace -> Tools -> make it **Public** -> attach it to a model. No MCP connection is required -- the tool drives officecli-mcp over plain HTTP (`/tools/call`). The MCP streamable-HTTP endpoint (`/mcp`) stays available for debugging but is no longer the primary path.
 
 In a chat with that model: attach a `.docx`/`.xlsx`/`.pptx` and ask it to edit; the model calls `officecli_file(action="upload")` to get a `file_id`, edits via the `officecli_*` tools over HTTP, then `officecli_file(action="download")` to hand back a downloadable file chip.
 
@@ -124,10 +124,10 @@ All MCP tools are prefixed `officecli_` and take a `file_id` handle (returned by
 | `OFFICECLI_MCP_ALLOWED_HOSTS` | `127.0.0.1:*,localhost:*,[::1]:*` | comma-separated `Host` headers the `/mcp` endpoint is reachable by (use `host:*` for any port). OpenWebUI calls `http://officecli-mcp:8765/mcp` across the docker network, so the docker service name must be listed or clients get 421 `Invalid Host header`. The compose file sets this to `officecli-mcp:8765,localhost:8765,127.0.0.1:8765`. |
 | `OFFICECLI_MCP_DNS_REBINDING_PROTECTION` | 1 | the MCP SDK DNS-rebinding / Host-header guard; set `0` to disable it entirely |
 | `OFFICECLI_MCP_SCREENSHOT_MAX_EDGE` | 1024 | screenshot downscale longest edge (px); 0=off |
-| `OFFICECLI_MCP_OWUI_SYNC` | 1 | push the officecli_file tool into OpenWebUI on boot |
+| `OFFICECLI_MCP_OWUI_SYNC` | 1 | push the officecli tool into OpenWebUI on boot |
 | `OFFICECLI_MCP_OWUI_URL` | "" | OpenWebUI internal base (for self-sync) |
 | `OFFICECLI_MCP_OWUI_API_KEY` | "" | OpenWebUI **admin** API key (for self-sync; keep secret) |
-| `OFFICECLI_MCP_OWUI_TOOL_ID` | `officecli_file` | tool id to create/update |
+| `OFFICECLI_MCP_OWUI_TOOL_ID` | `officecli` | tool id to create/update |
 
 ## `officecli_file` actions
 

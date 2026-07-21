@@ -33,9 +33,9 @@ def _transport(rec: list[dict], *, existing: dict | None = None):
         rec.append({"method": request.method, "url": str(request.url), "body": request.read()})
         assert request.headers.get("authorization") == "Bearer sk-admin"
         if request.url.path.endswith("/create"):
-            return httpx.Response(200, json={"id": "officecli_file"})
+            return httpx.Response(200, json={"id": "officecli"})
         if request.url.path.endswith("/update"):
-            return httpx.Response(200, json={"id": "officecli_file"})
+            return httpx.Response(200, json={"id": "officecli"})
         # GET /id/{id}
         if existing is None:
             return httpx.Response(404, json={"detail": "not found"})
@@ -56,7 +56,7 @@ async def test_sync_creates_tool_when_missing(settings, mcp_server, monkeypatch)
     import json
 
     body = json.loads(rec[1]["body"])
-    assert body["id"] == "officecli_file"
+    assert body["id"] == "officecli"
     assert body["name"] == "OfficeCLI"  # readable display name on create
     assert body["content"].startswith("# officecli-shim-rev: ")
     # ToolForm.access_grants is `list[dict | None] = None` in NAME ONLY - the
@@ -93,7 +93,7 @@ async def test_sync_updates_stale_tool_preserving_access_grants(settings, mcp_se
     from officecli_mcp import shim_sync
 
     existing = {
-        "id": "officecli_file",
+        "id": "officecli",
         "name": "Office CLI",
         "content": "# officecli-shim-rev: stale\nold",
         "meta": {"description": "old"},
@@ -120,7 +120,7 @@ async def test_sync_update_with_null_stored_grants_sends_empty_list(settings, mc
     from officecli_mcp import shim_sync
 
     existing = {
-        "id": "officecli_file",
+        "id": "officecli",
         "name": "Office CLI",
         "content": "# officecli-shim-rev: stale\nold",
         "meta": {"description": "old"},
@@ -145,7 +145,7 @@ async def test_sync_noop_when_revision_matches(settings, mcp_server, monkeypatch
     current = render_shim(await get_manifest(mcp_server))
     # The GET response for a private tool carries access_grants=[] (the API
     # echoes a list); the noop path must work regardless.
-    existing = {"id": "officecli_file", "name": "t", "content": current,
+    existing = {"id": "officecli", "name": "t", "content": current,
                 "meta": {"description": "d"}, "access_grants": []}
     rec: list[dict] = []
     monkeypatch.setattr(shim_sync, "_client", lambda url, key: httpx.AsyncClient(

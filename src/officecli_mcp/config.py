@@ -66,7 +66,7 @@ class Settings:
     owui_sync: bool = _env_bool("OFFICECLI_MCP_OWUI_SYNC", True)
     owui_url: str = os.environ.get("OFFICECLI_MCP_OWUI_URL", "")
     owui_api_key: str = os.environ.get("OFFICECLI_MCP_OWUI_API_KEY", "")
-    owui_tool_id: str = os.environ.get("OFFICECLI_MCP_OWUI_TOOL_ID", "officecli_file")
+    owui_tool_id: str = os.environ.get("OFFICECLI_MCP_OWUI_TOOL_ID", "officecli")
     # MCP streamable-HTTP DNS-rebinding / Host-header guard (mcp sdk transport_security).
     dns_rebinding_protection: bool = _env_bool("OFFICECLI_MCP_DNS_REBINDING_PROTECTION", True)
     allowed_hosts: tuple[str, ...] = field(default_factory=_parse_allowed_hosts)

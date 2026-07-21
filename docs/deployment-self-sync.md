@@ -59,7 +59,7 @@ Symptoms when this is missing: the boot log shows
 
 Watch the container log on start:
 
-- `GET .../api/v1/tools/id/officecli_file 200` + `up to date` — already current.
+- `GET .../api/v1/tools/id/officecli 200` + `up to date` — already current.
 - `... POST /api/v1/tools/create 200` + `created OpenWebUI tool` — created.
 - `shim self-sync skipped: ... not set` — env not wired (manual paste mode).
 - A `WARNING ... shim self-sync failed` — sync failed; the server keeps running

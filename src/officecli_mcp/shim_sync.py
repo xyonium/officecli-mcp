@@ -43,7 +43,7 @@ async def sync_shim(settings, mcp) -> None:
     if not url or not key:
         log.info("shim self-sync skipped: OFFICECLI_MCP_OWUI_URL / _API_KEY not set")
         return
-    tool_id = getattr(settings, "owui_tool_id", "officecli_file")
+    tool_id = getattr(settings, "owui_tool_id", "officecli")
     try:
         manifest = await get_manifest(mcp)
         content = render_shim(manifest)

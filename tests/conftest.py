@@ -33,7 +33,7 @@ def settings(tmp_path: Path) -> object:
         owui_sync=True,
         owui_url="",
         owui_api_key="",
-        owui_tool_id="officecli_file",
+        owui_tool_id="officecli",
         dns_rebinding_protection=True,
         allowed_hosts=("127.0.0.1:*", "localhost:*", "[::1]:*"),
     )
