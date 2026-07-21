@@ -58,6 +58,15 @@ class Settings:
     # structure), 3=truncate to view_html_max_chars. Default 2 (compact).
     view_html_mode: int = _env_int("OFFICECLI_MCP_VIEW_HTML_MODE", 2)
     view_html_max_chars: int = _env_int("OFFICECLI_MCP_VIEW_HTML_MAX_CHARS", 8000)
+    # Screenshots enter the model context as base64; clamp the longest edge
+    # (px, aspect preserved) to bound tokens. 0 disables resizing.
+    screenshot_max_edge: int = _env_int("OFFICECLI_MCP_SCREENSHOT_MAX_EDGE", 1024)
+    # Self-sync of the officecli_file shim into OpenWebUI's Tools API on boot.
+    # owui_sync=0 or missing url/key disables it (manual paste mode).
+    owui_sync: bool = _env_bool("OFFICECLI_MCP_OWUI_SYNC", True)
+    owui_url: str = os.environ.get("OFFICECLI_MCP_OWUI_URL", "")
+    owui_api_key: str = os.environ.get("OFFICECLI_MCP_OWUI_API_KEY", "")
+    owui_tool_id: str = os.environ.get("OFFICECLI_MCP_OWUI_TOOL_ID", "officecli")
     # MCP streamable-HTTP DNS-rebinding / Host-header guard (mcp sdk transport_security).
     dns_rebinding_protection: bool = _env_bool("OFFICECLI_MCP_DNS_REBINDING_PROTECTION", True)
     allowed_hosts: tuple[str, ...] = field(default_factory=_parse_allowed_hosts)
